@@ -8,7 +8,7 @@ export async function handler(event) {
       return {
         statusCode: 200,
         body: JSON.stringify({
-          redirect: "https://muckross-tour.netlify.app"
+          redirect: "https://muckrosspt.netlify.app"
         })
       };
     }
