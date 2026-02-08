@@ -2,10 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tour Access</title>
+  <title>Starting your tour…</title>
 </head>
 <body>
-  <h1>Welcome to your Tour Access Page</h1>
-  <p>This is the starting page for testing. Nothing breaks live tours.</p>
+  <p>Starting your tour…</p>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    if (!token) {
+      document.body.innerHTML = "Invalid or missing access token.";
+    } else {
+      fetch("/.netlify/functions/webhook?token=" + token)
+        .then(response => response.json())
+        .then(data => {
+          if (data.redirect) {
+            window.location.href = data.redirect;
+          } else {
+            document.body.innerHTML = "Access error.";
+          }
+        })
+        .catch(() => {
+          document.body.innerHTML = "Connection error.";
+        });
+    }
+  </script>
 </body>
 </html>
