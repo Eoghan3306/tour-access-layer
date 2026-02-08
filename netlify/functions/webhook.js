@@ -1,6 +1,6 @@
 const tourLinks = {
-  'test123': '/tour-test.html', // test tour
-  // later add real tour tokens here
+  'test123': 'https://muckrosspt.netlify.app', // live static tour used for testing
+  // Later you can add more tokens here, e.g. 'tour456': 'https://another-tour.netlify.app'
 };
 
 export async function handler(event, context) {
