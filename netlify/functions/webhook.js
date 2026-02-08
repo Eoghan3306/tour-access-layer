@@ -1,11 +1,21 @@
 const tourLinks = {
-  'test123': '/tour-test.html', // static link to your test tour
+  'test123': '/tour-test.html', // test tour
+  // later add real tour tokens here
 };
 
 export async function handler(event, context) {
   try {
-    const body = JSON.parse(event.body);       // Lemon Squeezy sends JSON
-    const token = body.data.token;             // extract token
+    let token;
+
+    if (event.httpMethod === 'GET') {
+      // For browser testing: ?token=...
+      token = event.queryStringParameters?.token;
+    } else if (event.httpMethod === 'POST') {
+      // For Lemon Squeezy webhook: JSON body { data: { token: "..." } }
+      const body = JSON.parse(event.body);
+      token = body.data?.token;
+    }
+
     const redirectUrl = tourLinks[token];
 
     if (redirectUrl) {
@@ -14,10 +24,16 @@ export async function handler(event, context) {
         headers: { Location: redirectUrl },
       };
     } else {
-      return { statusCode: 404, body: 'Invalid token' };
+      return {
+        statusCode: 404,
+        body: 'Invalid token',
+      };
     }
   } catch (err) {
-    return { statusCode: 500, body: 'Server error: ' + err.message };
+    return {
+      statusCode: 500,
+      body: 'Server error: ' + err.message,
+    };
   }
 }
 
