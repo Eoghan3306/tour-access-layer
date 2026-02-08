@@ -1,6 +1,9 @@
+// Mapping of tokens to static tour URLs
 const tourLinks = {
-  'test123': 'https://muckrosspt.netlify.app', // live static tour used for testing
-  // Later you can add more tokens here, e.g. 'tour456': 'https://another-tour.netlify.app'
+  'tour1-dkp94a': 'https://nationalparktour.netlify.app',       // Discover Killarney National Park
+  'tour2-qwe73f': 'https://hagsglen.netlify.app',               // Hag’s Glen: Path to the Devil’s Ladder
+  'tour3-rtx82v': 'https://muckrosspt.netlify.app',             // Muckross Park Revealed
+  'tour4-plm65z': 'https://rosscastletour.netlify.app',         // Ross Island Uncovered
 };
 
 export async function handler(event, context) {
