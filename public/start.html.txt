@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tour Access</title>
+</head>
+<body>
+  <h1>Welcome to your Tour Access Page</h1>
+  <p>This is the starting page for testing. Nothing breaks live tours.</p>
+</body>
+</html>
