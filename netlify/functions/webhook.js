@@ -1,27 +1,23 @@
-export async function handler(event) {
-  // If this is a browser request with a token
-  if (event.httpMethod === "GET") {
-    const token = event.queryStringParameters?.token;
+const tourLinks = {
+  'test123': '/tour-test.html', // static link to your test tour
+};
 
-    // TEMP: test token
-    if (token === "test123") {
+export async function handler(event, context) {
+  try {
+    const body = JSON.parse(event.body);       // Lemon Squeezy sends JSON
+    const token = body.data.token;             // extract token
+    const redirectUrl = tourLinks[token];
+
+    if (redirectUrl) {
       return {
-        statusCode: 200,
-        body: JSON.stringify({
-          redirect: "https://muckrosspt.netlify.app"
-        })
+        statusCode: 302,
+        headers: { Location: redirectUrl },
       };
+    } else {
+      return { statusCode: 404, body: 'Invalid token' };
     }
-
-    return {
-      statusCode: 403,
-      body: JSON.stringify({ error: "Invalid token" })
-    };
+  } catch (err) {
+    return { statusCode: 500, body: 'Server error: ' + err.message };
   }
-
-  // Default response
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ message: "Webhook endpoint ready" })
-  };
 }
+
