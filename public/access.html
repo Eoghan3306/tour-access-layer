@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Starting your tour…</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+  </head>
+  <body>
+    <p>Starting your tour…</p>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token");
+
+      if (!token) {
+        document.body.innerHTML = "<p>Invalid link (missing token).</p>";
+      } else {
+        // Hand off to the server-side validator
+        window.location.href =
+          `/.netlify/functions/validate?token=${encodeURIComponent(token)}`;
+      }
+    </script>
+  </body>
+</html>

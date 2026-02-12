@@ -1,3 +1,7 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
+[[redirects]]
+  from = "/access"
+  to = "/access.html"
+  status = 200
