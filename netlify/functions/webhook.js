@@ -1,47 +1,61 @@
-// netlify/functions/webhook.js
-import crypto from 'crypto';
+import crypto from "crypto";
+import { createClient } from "@supabase/supabase-js";
 
-// In-memory store (for testing); use a DB for production
-const activeTokens = {};
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-const tourLinks = {
-  'Discover Killarney National Park': 'https://nationalparktour.netlify.app',
-  "Hag's Glen": 'https://hagsglen.netlify.app',
-  'Muckross Park Revealed': 'https://muckrosspt.netlify.app',
-  'Ross Island Uncovered': 'https://rosscastletour.netlify.app',
-};
-
-export async function handler(event, context) {
+export async function handler(event) {
   try {
-    const body = JSON.parse(event.body);
+    const body = JSON.parse(event.body || "{}");
 
-    // Example: get license key and product name from webhook
-    const licenseKey = body.data?.license?.key || body.data?.license?.id; 
-    const productName = body.data?.line_items?.[0]?.name;
+    // Try to safely extract product name from LemonSqueezy payload
+    const productName =
+      body?.data?.attributes?.first_order_item?.product_name ||
+      body?.data?.line_items?.[0]?.name ||
+      body?.data?.attributes?.product_name;
 
-    if (!licenseKey || !productName) {
-      return { statusCode: 400, body: 'Missing license key or product name' };
+    if (!productName) {
+      return {
+        statusCode: 400,
+        body: "Missing product name in webhook payload",
+      };
     }
 
-    // Generate a unique redirect token
-    const redirectToken = crypto.randomBytes(12).toString('hex');
+    // Generate secure token
+    const token = crypto.randomBytes(16).toString("hex");
 
-    // Store it (in-memory for testing; DB for production)
-    activeTokens[redirectToken] = {
-      licenseKey,
-      productName,
-      expires: Date.now() + 24 * 60 * 60 * 1000 // optional 24h expiration
-    };
+    // Set expiry (7 days example)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // Construct the redirect URL
-    const tourUrl = tourLinks[productName];
-    const redirectUrl = `${tourUrl}?token=${redirectToken}`;
+    // Insert into Supabase
+    const { error } = await supabase.from("tokens").insert([
+      {
+        token: token,
+        product: productName,
+        created_at: new Date().toISOString(),
+        expires_at: expiresAt.toISOString(),
+        uses: 0,
+        max_uses: 3,
+      },
+    ]);
+
+    if (error) throw error;
 
     return {
-      statusCode: 302,
-      headers: { Location: redirectUrl },
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        message: "Token stored successfully",
+      }),
     };
+
   } catch (err) {
-    return { statusCode: 500, body: 'Server error: ' + err.message };
+    return {
+      statusCode: 500,
+      body: "Webhook error: " + err.message,
+    };
   }
 }
