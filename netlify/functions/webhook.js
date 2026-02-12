@@ -1,42 +1,47 @@
-// Mapping of tokens to static tour URLs
+// netlify/functions/webhook.js
+import crypto from 'crypto';
+
+// In-memory store (for testing); use a DB for production
+const activeTokens = {};
+
 const tourLinks = {
-  'tour1-dkp94a': 'https://nationalparktour.netlify.app',       // Discover Killarney National Park
-  'tour2-qwe73f': 'https://hagsglen.netlify.app',               // Hag’s Glen: Path to the Devil’s Ladder
-  'tour3-rtx82v': 'https://muckrosspt.netlify.app',             // Muckross Park Revealed
-  'tour4-plm65z': 'https://rosscastletour.netlify.app',         // Ross Island Uncovered
+  'Discover Killarney National Park': 'https://nationalparktour.netlify.app',
+  "Hag's Glen": 'https://hagsglen.netlify.app',
+  'Muckross Park Revealed': 'https://muckrosspt.netlify.app',
+  'Ross Island Uncovered': 'https://rosscastletour.netlify.app',
 };
 
 export async function handler(event, context) {
   try {
-    let token;
+    const body = JSON.parse(event.body);
 
-    if (event.httpMethod === 'GET') {
-      // For browser testing: ?token=...
-      token = event.queryStringParameters?.token;
-    } else if (event.httpMethod === 'POST') {
-      // For Lemon Squeezy webhook: JSON body { data: { token: "..." } }
-      const body = JSON.parse(event.body);
-      token = body.data?.token;
+    // Example: get license key and product name from webhook
+    const licenseKey = body.data?.license?.key || body.data?.license?.id; 
+    const productName = body.data?.line_items?.[0]?.name;
+
+    if (!licenseKey || !productName) {
+      return { statusCode: 400, body: 'Missing license key or product name' };
     }
 
-    const redirectUrl = tourLinks[token];
+    // Generate a unique redirect token
+    const redirectToken = crypto.randomBytes(12).toString('hex');
 
-    if (redirectUrl) {
-      return {
-        statusCode: 302,
-        headers: { Location: redirectUrl },
-      };
-    } else {
-      return {
-        statusCode: 404,
-        body: 'Invalid token',
-      };
-    }
-  } catch (err) {
-    return {
-      statusCode: 500,
-      body: 'Server error: ' + err.message,
+    // Store it (in-memory for testing; DB for production)
+    activeTokens[redirectToken] = {
+      licenseKey,
+      productName,
+      expires: Date.now() + 24 * 60 * 60 * 1000 // optional 24h expiration
     };
+
+    // Construct the redirect URL
+    const tourUrl = tourLinks[productName];
+    const redirectUrl = `${tourUrl}?token=${redirectToken}`;
+
+    return {
+      statusCode: 302,
+      headers: { Location: redirectUrl },
+    };
+  } catch (err) {
+    return { statusCode: 500, body: 'Server error: ' + err.message };
   }
 }
-

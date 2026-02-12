@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>National Park Walk Audio Tour</title> 
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  /* --- DESIGN SYSTEM (Standardized) --- */
+  :root {
+    --primary: #8fa87a;
+    --primary-light: #b7cba9;
+    --dark: #2c3e50;
+    --light: #ffffff;
+    --gray: #f5f7fa;
+    --shadow: 0 8px 30px rgba(0,0,0,0.12);
+    --radius: 12px;
+    --transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    --highlight-color: #ff3333; 
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body { 
+    margin: 0; padding: 0; 
+    font-family: 'Inter', sans-serif; 
+    display: flex; height: 100vh; height: 100dvh; 
+    overflow: hidden; color: var(--dark); background: var(--gray); 
+  }
+
+  /* --- Map & Layout --- */
+  #map-container { flex: 1; position: relative; display: flex; flex-direction: column; height: 100%; width: 100%; }
+  #map { width: 100%; height: 100%; flex: 1; outline: none; }
+
+  /* --- Sidebar --- */
+  #sidebar { 
+    position: absolute; top: 20px; left: 20px; width: 280px; max-height: calc(100vh - 180px); 
+    background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: var(--radius); padding: 0; box-shadow: var(--shadow); z-index: 100; 
+    display: flex; flex-direction: column; transform: translateX(0); transition: transform var(--transition); 
+    overflow: hidden; border: 1px solid rgba(255,255,255,0.4); 
+  }
+  #sidebar.closed { transform: translateX(-150%); }
+
+  .sidebar-header { padding: 16px 20px; background: var(--primary-light); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .sidebar-title-group h2 { font-size: 16px; margin: 0; font-weight: 700; color: var(--dark); }
+  .sidebar-subtitle { font-size: 11px; opacity: 0.8; color: var(--dark); margin-top: 2px; text-transform: uppercase; font-weight: 600; }
+  
+  #closeSidebarInner { background: rgba(255,255,255,0.3); border: none; color: var(--dark); width: 32px; height: 32px; border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+  #closeSidebarInner:hover { background: rgba(255,255,255,0.6); }
+
+  #stops { list-style: none; padding: 0; margin: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #stops li { padding: 16px 20px; cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 14px; font-weight: 500; transition: background 0.2s; display: flex; align-items: center; }
+  #stops li:hover { background: #f0f4ec; color: var(--primary); }
+  #stops li::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--primary-light); border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
+
+  /* --- Player --- */
+  #persistent-player { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 420px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.15); z-index: 50; padding: 12px; border: 1px solid rgba(255,255,255,0.6); transition: bottom 0.3s ease; }
+  #soundcloud-player { width: 100%; height: 120px; border: none; border-radius: 8px; display: block; background: #f5f5f5; }
+  .player-attribution { font-size: 11px; color: #888; text-align: center; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-attribution a { color: var(--primary); text-decoration: none; font-weight: 600; }
+  .mobile-handle { display: none; }
+
+  /* --- Controls & Buttons --- */
+  .control-pill { position: absolute; top: 20px; z-index: 40; background: var(--dark); color: white; border: none; border-radius: 30px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; align-items: center; transition: transform 0.1s, background 0.2s; }
+  .control-pill:active { transform: scale(0.98); }
+  #toggleSidebar { left: 20px; padding: 10px 16px; gap: 8px; }
+  body:not(.sidebar-closed) #toggleSidebar { display: none; }
+
+  .select-wrapper { position: absolute; top: 20px; right: 20px; z-index: 40; }
+  #styleDropdown { appearance: none; -webkit-appearance: none; background-color: var(--dark); color: white; border: none; border-radius: 30px; padding: 10px 36px 10px 20px; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,0.2); cursor: pointer; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 12px top 50%; background-size: 10px auto; }
+  .mapboxgl-ctrl-top-right { top: 65px !important; right: 20px !important; }
+
+  /* --- Pulse Animation --- */
+  @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.9); } 70% { box-shadow: 0 0 0 25px rgba(255, 51, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); } }
+  .highlight-active { animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; position: relative; z-index: 9999 !important; transition: all 0.3s; transform: scale(1.05); border: 2px solid var(--highlight-color) !important; }
+  .mapboxgl-ctrl-geolocate.highlight-active { border-radius: 50% !important; }
+  #toggleSidebar.highlight-active { position: absolute; }
+
+  /* --- Markers --- */
+  .marker { background-size: cover; background-color: var(--primary-light); border: 2px solid white; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s, background 0.2s; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .marker:hover { transform: scale(1.15); z-index: 50; border-color: var(--dark); }
+  .marker-node { width: 28px; height: 28px; border-radius: 50%; color: white; font-size: 12px; }
+  .marker-start { width: 50px; height: 50px; background-color: var(--dark); color: white; border-radius: 50%; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 3px solid white; }
+  .marker-end { width: 40px; height: 40px; background-color: #e74c3c; color: white; border-radius: 50%; font-size: 10px; font-weight: 700; border: 3px solid white; }
+
+  /* --- Modals & Tour Overlay --- */
+  .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); backdrop-filter: blur(4px); align-items: center; justify-content: center; opacity: 0; animation: fadeIn 0.3s forwards; }
+  .modal-content { background: white; padding: 24px 32px; border-radius: 16px; max-width: 320px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); transform: scale(0.9); animation: popIn 0.3s forwards; }
+  .modal-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+  .btn { padding: 10px 24px; border: none; border-radius: 30px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--dark); color: white; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+
+  #tourOverlay { position: fixed; bottom: 220px; left: 50%; transform: translateX(-50%); background: rgba(44, 62, 80, 0.95); color: white; padding: 20px; border-radius: 16px; width: 90%; max-width: 340px; text-align: center; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: none; backdrop-filter: blur(8px); animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  #tourMessage { font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
+  .tour-actions { display: flex; justify-content: space-between; align-items: center; }
+  .btn-tour { padding: 6px 14px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  #tourNext { background: var(--primary-light); color: var(--dark); }
+  #tourSkip { background: transparent; color: #aaa; }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+  @keyframes popIn { to { transform: scale(1); } }
+  @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+  /* --- Responsive --- */
+  @media (max-width: 768px) {
+    .mapboxgl-ctrl-top-right { top: 70px !important; }
+    #toggleSidebar { display: flex !important; top: 15px; left: 15px; }
+    .select-wrapper { top: 15px; right: 15px; }
+    #sidebar { top: 0; left: 0; height: 100dvh; max-height: 100dvh; width: 100%; border-radius: 0; border: none; transform: translateX(-100%); z-index: 2000; }
+    #sidebar.active { transform: translateX(0); }
+    #sidebar.closed { transform: translateX(-100%); }
+    #persistent-player { bottom: 0; left: 0; width: 100%; max-width: 100%; transform: none; border-radius: 24px 24px 0 0; padding: 12px 12px 0 12px; padding-bottom: calc(env(safe-area-inset-bottom) + 15px); background: white; }
+    #soundcloud-player { height: 110px; }
+    .mobile-handle { display: block; width: 40px; height: 4px; background: #ddd; border-radius: 2px; margin: 0 auto 10px auto; }
+    #tourOverlay { bottom: 180px; }
+  }
+</style>
+</head>
+<body>
+
+<button id="toggleSidebar" class="control-pill">
+  <span>☰</span> Route List
+</button>
+
+<div id="sidebar" class="closed"> 
+  <div class="sidebar-header">
+    <div class="sidebar-title-group">
+      <h2>National Park Walk</h2>
+      <div class="sidebar-subtitle">Audio Guided Tour</div>
+    </div>
+    <button id="closeSidebarInner" aria-label="Close Menu">&times;</button>
+  </div>
+  <ul id="stops"></ul>
+</div>
+
+<div id="map-container">
+  <div class="select-wrapper">
+    <select id="styleDropdown">
+      <option value="mapbox://styles/mapbox/outdoors-v12" selected>Outdoors</option>
+      <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
+      <option value="mapbox://styles/mapbox/satellite-streets-v12">Satellite</option>
+      <option value="mapbox://styles/mapbox/light-v11">Light</option>
+      <option value="mapbox://styles/mapbox/dark-v11">Dark</option>
+    </select>
+  </div>
+  
+  <div id="map"></div>
+
+  <div id="persistent-player">
+    <div class="mobile-handle"></div>
+    <iframe id="soundcloud-player" scrolling="no" frameborder="no" allow="autoplay" src=""></iframe>
+    <div class="player-attribution">
+      <a href="https://soundcloud.com/killarneyaudiotours/national-park/s-r2JUWaSrSUf" target="_blank">National Park Audio</a>
+    </div>
+  </div>
+</div>
+
+<div id="audioModal" class="modal">
+  <div class="modal-content">
+    <p id="modal-text">Jump audio to this location?</p>
+    <div class="modal-buttons">
+      <button id="modal-yes" class="btn btn-primary">Yes, Play</button>
+      <button id="modal-no" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="tourOverlay">
+  <div id="tourMessage"></div>
+  <div class="tour-actions">
+    <button id="tourSkip" class="btn-tour">Dismiss</button>
+    <button id="tourNext" class="btn-tour">Next Step</button>
+  </div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://w.soundcloud.com/player/api.js"></script>
+
+<script>
+// ============================================================================
+// SECTION B: TOUR CONFIGURATION (UPDATED FOR NATIONAL PARK WALK)
+// ============================================================================
+
+// 1. Map Start Position
+const START_CENTER = [-9.5309322, 52.0587575]; 
+const START_ZOOM = 13;
+
+// 2. SoundCloud Source URL (NEW TRACK)
+const SC_SRC = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/soundcloud%3Atracks%3A2260511657%3Fsecret_token%3Ds-r2JUWaSrSUf&color=%238fa87a&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false";
+
+// 3. Audio Timestamps
+const audioTimestamps = [0, 197000, 283000, 440000, 794000, 880000, 1049000];
+
+// 4. Mapbox Token
+mapboxgl.accessToken = 'pk.eyJ1IjoiZW9naGFub2QiLCJhIjoiY21lOXFwOGhyMHVvNTJrcXZnY3I1dGlnOSJ9.7g8Xb_w6p8QiMNloqwPVRQ';
+
+// 5. Route Line Data
+const routeGeoJSON = { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[-9.52611,52.05497],[-9.52567,52.05502],[-9.52551,52.05504],[-9.52538,52.05506],[-9.52509,52.05509],[-9.5248,52.05512],[-9.52476,52.05512],[-9.52462,52.05514],[-9.52454,52.05517],[-9.52442,52.05525],[-9.52304,52.05627],[-9.52298,52.05631],[-9.52292,52.05635],[-9.52286,52.05641],[-9.5228,52.05646],[-9.52269,52.05655],[-9.52268,52.05655],[-9.5225,52.0567],[-9.52242,52.05676],[-9.52228,52.05687],[-9.5222,52.05693],[-9.52214,52.05698],[-9.5221,52.05701],[-9.52205,52.05705],[-9.522,52.05708],[-9.52192,52.05713],[-9.52184,52.05717],[-9.52177,52.0572],[-9.52163,52.05727],[-9.52149,52.05733],[-9.52148,52.05733],[-9.52125,52.05744],[-9.52109,52.05751],[-9.52087,52.0576],[-9.52073,52.05766],[-9.52063,52.0577],[-9.52055,52.05774],[-9.52041,52.05781],[-9.5203,52.05787],[-9.52025,52.05789],[-9.52021,52.05791],[-9.52014,52.05793],[-9.52005,52.05796],[-9.51998,52.05798],[-9.51991,52.05802],[-9.51985,52.05804],[-9.5198,52.05807],[-9.51974,52.05811],[-9.52014,52.05825],[-9.52024,52.05829],[-9.52034,52.05833],[-9.52041,52.05838],[-9.52046,52.05841],[-9.52051,52.05844],[-9.52055,52.05848],[-9.52059,52.05853],[-9.52061,52.05858],[-9.52065,52.05867],[-9.52066,52.05871],[-9.52067,52.05875],[-9.52058,52.05879],[-9.52049,52.05883],[-9.52039,52.05886],[-9.52031,52.05888],[-9.52015,52.05891],[-9.51992,52.05895],[-9.51973,52.05897],[-9.51988,52.05901],[-9.52049,52.05915],[-9.5207,52.0592],[-9.52084,52.05923],[-9.52089,52.05925],[-9.52094,52.05927],[-9.52099,52.0593],[-9.52105,52.05926],[-9.52118,52.05931],[-9.52129,52.05935],[-9.5213,52.05935],[-9.5214,52.05939],[-9.52153,52.05943],[-9.52156,52.05944],[-9.52172,52.05949],[-9.52181,52.05952],[-9.5219,52.05955],[-9.52203,52.05959],[-9.52207,52.05961],[-9.52215,52.05963],[-9.52228,52.05967],[-9.52234,52.05968],[-9.52242,52.05971],[-9.52253,52.05974],[-9.5226,52.05976],[-9.52265,52.05977],[-9.52281,52.05981],[-9.52287,52.05983],[-9.52313,52.05989],[-9.52314,52.0599],[-9.52332,52.05995],[-9.52341,52.05997],[-9.52346,52.05998],[-9.52356,52.06002],[-9.52365,52.06005],[-9.52367,52.06006],[-9.52379,52.0601],[-9.52392,52.06015],[-9.524,52.06018],[-9.52421,52.06026],[-9.52443,52.06035],[-9.52455,52.0604],[-9.52458,52.06041],[-9.52461,52.06043],[-9.5247,52.06047],[-9.52476,52.06051],[-9.5248,52.06054],[-9.52486,52.0606],[-9.5249,52.06066],[-9.52492,52.06069],[-9.52495,52.06073],[-9.52496,52.06075],[-9.52499,52.06082],[-9.52501,52.06087],[-9.52507,52.06099],[-9.52512,52.06108],[-9.52521,52.06126],[-9.52523,52.0613],[-9.52522,52.06133],[-9.52533,52.06146],[-9.52536,52.06149],[-9.52542,52.06154],[-9.52596,52.06165],[-9.52609,52.06166],[-9.52619,52.06167],[-9.5263,52.06168],[-9.52689,52.06169],[-9.52713,52.06171],[-9.52718,52.06171],[-9.52747,52.06173],[-9.52773,52.06175],[-9.52794,52.06176],[-9.52807,52.06178],[-9.5282,52.06180],[-9.52834,52.06182],[-9.52836,52.06183],[-9.52847,52.06185],[-9.52861,52.06188],[-9.52864,52.06189],[-9.52887,52.06195],[-9.5294,52.06211],[-9.52967,52.06219],[-9.52969,52.0622],[-9.52993,52.06227],[-9.53019,52.06235],[-9.53058,52.06247],[-9.53059,52.06247],[-9.53072,52.0625],[-9.53091,52.06255],[-9.531,52.06256],[-9.53114,52.06259],[-9.53128,52.06262],[-9.53141,52.06265],[-9.53152,52.06267],[-9.53198,52.06274],[-9.53212,52.06277],[-9.53235,52.0628],[-9.53241,52.06281],[-9.53269,52.06284],[-9.53283,52.06286],[-9.53311,52.06289],[-9.53312,52.0629],[-9.53327,52.06292],[-9.53336,52.06293],[-9.5334,52.06294],[-9.53355,52.06297],[-9.53359,52.06297],[-9.53384,52.06304],[-9.53421,52.06315],[-9.53434,52.06319],[-9.53443,52.06321],[-9.53448,52.06323],[-9.53461,52.06326],[-9.53487,52.06333],[-9.53511,52.06338],[-9.53516,52.06338],[-9.53587,52.06349],[-9.53656,52.06272],[-9.53622,52.06239],[-9.53615,52.06231],[-9.5361,52.06226],[-9.53608,52.06223],[-9.53586,52.06196],[-9.53585,52.06193],[-9.53577,52.06184],[-9.53571,52.06177],[-9.5356,52.06166],[-9.53556,52.06162],[-9.53545,52.06151],[-9.53525,52.06135],[-9.53503,52.06119],[-9.53502,52.06118],[-9.53445,52.06079],[-9.53432,52.0607],[-9.53427,52.06065],[-9.53412,52.0605],[-9.53386,52.06017],[-9.53383,52.06013],[-9.53374,52.06001],[-9.53363,52.05986],[-9.53361,52.05984],[-9.53347,52.05969],[-9.53339,52.0596],[-9.53332,52.05953],[-9.53317,52.0594],[-9.53316,52.05938],[-9.53291,52.05918],[-9.5328,52.0591],[-9.53278,52.05907],[-9.53267,52.05899],[-9.53261,52.05896],[-9.53254,52.05891],[-9.53241,52.05883],[-9.53237,52.05881],[-9.53217,52.05871],[-9.53197,52.05864],[-9.53193,52.05863],[-9.53182,52.0586],[-9.53169,52.05856],[-9.53167,52.05855],[-9.53142,52.05845],[-9.53132,52.05841],[-9.53117,52.05836],[-9.53093,52.05829],[-9.53091,52.05828],[-9.53063,52.05822],[-9.53036,52.05815],[-9.5301,52.05809],[-9.52981,52.05803],[-9.52954,52.05797],[-9.52926,52.0579],[-9.52899,52.05784],[-9.52887,52.0578],[-9.52873,52.05776],[-9.52849,52.05769],[-9.52819,52.05762],[-9.528,52.05756],[-9.52774,52.05749],[-9.52737,52.05743],[-9.52726,52.05741],[-9.52708,52.05739],[-9.5268,52.05736],[-9.52651,52.05732],[-9.52566,52.05722],[-9.52558,52.0572],[-9.52552,52.05719],[-9.52548,52.05718],[-9.52545,52.05717],[-9.52542,52.05712],[-9.52548,52.0571],[-9.52567,52.05702],[-9.5259,52.05691],[-9.52609,52.05678],[-9.52619,52.05672],[-9.52623,52.0567],[-9.52632,52.05662],[-9.52641,52.05655],[-9.52659,52.05641],[-9.52665,52.05636],[-9.52686,52.05619],[-9.5271,52.05597],[-9.52714,52.05594],[-9.52725,52.05581],[-9.52732,52.05572],[-9.52736,52.05565],[-9.52736,52.05564],[-9.52739,52.05553],[-9.5274,52.05548],[-9.5274,52.05546],[-9.5274,52.05537],[-9.52738,52.0553],[-9.52736,52.05521],[-9.5273,52.05512],[-9.52728,52.05509],[-9.5272,52.05496],[-9.52719,52.05493],[-9.52714,52.05478],[-9.52684,52.05484]] } };
+
+// 6. Tour Stops Data
+const pointsGeoJSON = { 
+  "type":"FeatureCollection",
+  "features":[
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5195322,52.0589575,0]},"properties":{"name":"1. Deenagh Lodge & Cathedral View"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5244092,52.0603305,0]},"properties":{"name":"2. The Ascent - Knockreer Estate"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5296644,52.0621853,0]},"properties":{"name":"3. Summit Views"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5330854,52.0628903,0]},"properties":{"name":"4. Deer & Woodland Wildlife"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.531962,52.0586536,0]},"properties":{"name":"5. Approaching Crossroads"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5271827,52.0548912,0]},"properties":{"name":"6. Footbridge - Deenagh River"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5197321,52.0581103,0]},"properties":{"name":"7. Return to Deenagh Lodge"}}
+  ]
+};
+
+// ============================================================================
+// END CONFIGURATION
+// ============================================================================
+
+// --- Initialize Player ---
+document.getElementById('soundcloud-player').src = SC_SRC;
+
+// --- Initialize Map ---
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/outdoors-v12', // Set to Outdoors for park walk
+  center: START_CENTER,
+  zoom: START_ZOOM,
+  pitch: 60,
+  bearing: -100,
+  antialias: true
+});
+
+map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+map.addControl(new mapboxgl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserHeading: true
+}), 'top-right');
+
+// --- Sidebar Logic ---
+const sidebar = document.getElementById('sidebar');
+const toggleBtn = document.getElementById('toggleSidebar');
+const closeBtnInner = document.getElementById('closeSidebarInner');
+
+function initSidebarState() {
+  if (window.innerWidth > 768) { sidebar.classList.remove('closed'); } 
+  else { sidebar.classList.add('closed'); }
+}
+initSidebarState();
+
+toggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  sidebar.classList.toggle('closed');
+  sidebar.classList.toggle('active');
+});
+
+closeBtnInner.addEventListener('click', () => {
+  sidebar.classList.add('closed');
+  sidebar.classList.remove('active');
+});
+
+map.on('click', () => {
+  if (window.innerWidth <= 768 && !sidebar.classList.contains('closed')) {
+    sidebar.classList.add('closed');
+    sidebar.classList.remove('active');
+  }
+});
+
+// --- Audio Logic ---
+const iframeElement = document.getElementById('soundcloud-player');
+const widget = SC.Widget(iframeElement);
+let markerObjects = [];
+
+function showAudioConfirm(callback) {
+  const modal = document.getElementById('audioModal');
+  const yesBtn = document.getElementById('modal-yes');
+  const noBtn = document.getElementById('modal-no');
+  modal.style.display = 'flex'; 
+  
+  const newYes = yesBtn.cloneNode(true);
+  const newNo = noBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newYes, yesBtn);
+  noBtn.parentNode.replaceChild(newNo, noBtn);
+
+  newYes.onclick = () => { modal.style.display='none'; callback(true); };
+  newNo.onclick = () => { modal.style.display='none'; callback(false); };
+}
+
+function addMarkers() {
+  pointsGeoJSON.features.forEach((point, index) => {
+    const popup = new mapboxgl.Popup({ offset: 25 }).setText(point.properties.name);
+    const el = document.createElement('div');
+    el.className = 'marker'; 
+    if(index === 0) {
+      el.textContent = 'Start';
+      el.classList.add('marker-start');
+    } else if(index === pointsGeoJSON.features.length - 1) {
+      el.textContent = 'End';
+      el.classList.add('marker-end');
+    } else {
+      el.textContent = index + 1;
+      el.classList.add('marker-node');
+    }
+    const marker = new mapboxgl.Marker(el)
+      .setLngLat(point.geometry.coordinates)
+      .setPopup(popup)
+      .addTo(map);
+    markerObjects.push(marker);
+  });
+}
+
+function populateSidebar() {
+  const list = document.getElementById('stops');
+  list.innerHTML = '';
+  pointsGeoJSON.features.forEach((point, index) => {
+    const li = document.createElement('li');
+    li.textContent = point.properties.name;
+    li.addEventListener('click', () => {
+      if(window.innerWidth <= 768) {
+        sidebar.classList.add('closed');
+        sidebar.classList.remove('active');
+      }
+      const timestamp = audioTimestamps[index];
+      map.flyTo({ center: point.geometry.coordinates, zoom: 16, pitch: 60 });
+      showAudioConfirm((playFromHere) => {
+        if (playFromHere && timestamp !== undefined) {
+          widget.seekTo(timestamp);
+          widget.play();
+        }
+      });
+    });
+    list.appendChild(li);
+  });
+}
+
+function addRoute() {
+  if (map.getSource('route')) return;
+  map.addSource('route', { type: 'geojson', data: routeGeoJSON });
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#ff4d4d', 'line-width': 5, 'line-opacity': 0.8 }
+  });
+}
+
+map.on('load', () => {
+  addMarkers();
+  populateSidebar();
+  addRoute();
+});
+
+document.getElementById('styleDropdown').addEventListener('change', function(){
+  const c = map.getCenter(), z = map.getZoom(), p = map.getPitch(), b = map.getBearing();
+  map.setStyle(this.value);
+  map.once('styledata', ()=>{
+    map.jumpTo({center:c, zoom:z, pitch:p, bearing:b});
+    addMarkers();
+    addRoute();
+  });
+});
+
+/* --- Guided Tour Logic --- */
+const tourSteps = [
+  { message: "📍 Enable your live location to see yourself on the map.", selector: '.mapboxgl-ctrl-geolocate' },
+  { message: "🎧 Use the Route List menu to jump to specific stops.", selector: '#toggleSidebar' },
+  { message: "🗺️ Switch between map styles using this dropdown.", selector: '#styleDropdown' }
+];
+
+let tourIndex = 0;
+const tourOverlay = document.getElementById('tourOverlay');
+const tourMessage = document.getElementById('tourMessage');
+const tourNext = document.getElementById('tourNext');
+const tourSkip = document.getElementById('tourSkip');
+
+function showTourStep(index) {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+  if (index >= tourSteps.length) {
+    tourOverlay.style.display = 'none';
+    return;
+  }
+  tourMessage.innerHTML = tourSteps[index].message;
+  tourOverlay.style.display = 'block';
+  tourNext.textContent = (index === tourSteps.length - 1) ? 'Finish' : 'Next';
+  const selector = tourSteps[index].selector;
+  if (selector) {
+    const target = document.querySelector(selector);
+    if (target) target.classList.add('highlight-active');
+  }
+}
+
+tourNext.addEventListener('click', () => {
+  tourIndex++;
+  showTourStep(tourIndex);
+});
+
+tourSkip.addEventListener('click', () => {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+  tourOverlay.style.display = 'none';
+});
+
+window.addEventListener('load', () => {
+  tourIndex = 0;
+  setTimeout(() => showTourStep(tourIndex), 1500);
+});
+</script>
+</body>
+</html>

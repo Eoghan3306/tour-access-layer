@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Muckross Park Audio Tour</title> 
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  /* --- DESIGN SYSTEM (Standardized) --- */
+  :root {
+    --primary: #8fa87a;
+    --primary-light: #b7cba9;
+    --dark: #2c3e50;
+    --light: #ffffff;
+    --gray: #f5f7fa;
+    --shadow: 0 8px 30px rgba(0,0,0,0.12);
+    --radius: 12px;
+    --transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    --highlight-color: #ff3333; 
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body { 
+    margin: 0; padding: 0; 
+    font-family: 'Inter', sans-serif; 
+    display: flex; height: 100vh; height: 100dvh; 
+    overflow: hidden; color: var(--dark); background: var(--gray); 
+  }
+
+  /* --- Map & Layout --- */
+  #map-container { flex: 1; position: relative; display: flex; flex-direction: column; height: 100%; width: 100%; }
+  #map { width: 100%; height: 100%; flex: 1; outline: none; }
+
+  /* --- Sidebar --- */
+  #sidebar { 
+    position: absolute; top: 20px; left: 20px; width: 280px; max-height: calc(100vh - 180px); 
+    background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-radius: var(--radius); padding: 0; box-shadow: var(--shadow); z-index: 100; 
+    display: flex; flex-direction: column; transform: translateX(0); transition: transform var(--transition); 
+    overflow: hidden; border: 1px solid rgba(255,255,255,0.4); 
+  }
+  #sidebar.closed { transform: translateX(-150%); }
+
+  .sidebar-header { padding: 16px 20px; background: var(--primary-light); color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .sidebar-title-group h2 { font-size: 16px; margin: 0; font-weight: 700; color: var(--dark); }
+  .sidebar-subtitle { font-size: 11px; opacity: 0.8; color: var(--dark); margin-top: 2px; text-transform: uppercase; font-weight: 600; }
+  
+  #closeSidebarInner { background: rgba(255,255,255,0.3); border: none; color: var(--dark); width: 32px; height: 32px; border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+  #closeSidebarInner:hover { background: rgba(255,255,255,0.6); }
+
+  #stops { list-style: none; padding: 0; margin: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #stops li { padding: 16px 20px; cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 14px; font-weight: 500; transition: background 0.2s; display: flex; align-items: center; }
+  #stops li:hover { background: #f0f4ec; color: var(--primary); }
+  #stops li::before { content: ''; display: inline-block; width: 8px; height: 8px; background: var(--primary-light); border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
+
+  /* --- Player --- */
+  #persistent-player { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 420px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.15); z-index: 50; padding: 12px; border: 1px solid rgba(255,255,255,0.6); transition: bottom 0.3s ease; }
+  #soundcloud-player { width: 100%; height: 120px; border: none; border-radius: 8px; display: block; background: #f5f5f5; }
+  .player-attribution { font-size: 11px; color: #888; text-align: center; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-attribution a { color: var(--primary); text-decoration: none; font-weight: 600; }
+  .mobile-handle { display: none; }
+
+  /* --- Controls & Buttons --- */
+  .control-pill { position: absolute; top: 20px; z-index: 40; background: var(--dark); color: white; border: none; border-radius: 30px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; align-items: center; transition: transform 0.1s, background 0.2s; }
+  .control-pill:active { transform: scale(0.98); }
+  #toggleSidebar { left: 20px; padding: 10px 16px; gap: 8px; }
+  body:not(.sidebar-closed) #toggleSidebar { display: none; }
+
+  .select-wrapper { position: absolute; top: 20px; right: 20px; z-index: 40; }
+  #styleDropdown { appearance: none; -webkit-appearance: none; background-color: var(--dark); color: white; border: none; border-radius: 30px; padding: 10px 36px 10px 20px; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,0.2); cursor: pointer; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 12px top 50%; background-size: 10px auto; }
+  .mapboxgl-ctrl-top-right { top: 65px !important; right: 20px !important; }
+
+  /* --- Pulse Animation --- */
+  @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.9); } 70% { box-shadow: 0 0 0 25px rgba(255, 51, 51, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); } }
+  .highlight-active { animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; position: relative; z-index: 9999 !important; transition: all 0.3s; transform: scale(1.05); border: 2px solid var(--highlight-color) !important; }
+  .mapboxgl-ctrl-geolocate.highlight-active { border-radius: 50% !important; }
+  #toggleSidebar.highlight-active { position: absolute; }
+
+  /* --- Markers --- */
+  .marker { background-size: cover; background-color: var(--primary-light); border: 2px solid white; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s, background 0.2s; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .marker:hover { transform: scale(1.15); z-index: 50; border-color: var(--dark); }
+  .marker-node { width: 28px; height: 28px; border-radius: 50%; color: white; font-size: 12px; }
+  .marker-start { width: 50px; height: 50px; background-color: var(--dark); color: white; border-radius: 50%; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 3px solid white; }
+  .marker-end { width: 40px; height: 40px; background-color: #e74c3c; color: white; border-radius: 50%; font-size: 10px; font-weight: 700; border: 3px solid white; }
+
+  /* --- Modals & Tour Overlay --- */
+  .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); backdrop-filter: blur(4px); align-items: center; justify-content: center; opacity: 0; animation: fadeIn 0.3s forwards; }
+  .modal-content { background: white; padding: 24px 32px; border-radius: 16px; max-width: 320px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); transform: scale(0.9); animation: popIn 0.3s forwards; }
+  .modal-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+  .btn { padding: 10px 24px; border: none; border-radius: 30px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--dark); color: white; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+
+  #tourOverlay { position: fixed; bottom: 220px; left: 50%; transform: translateX(-50%); background: rgba(44, 62, 80, 0.95); color: white; padding: 20px; border-radius: 16px; width: 90%; max-width: 340px; text-align: center; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: none; backdrop-filter: blur(8px); animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  #tourMessage { font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
+  .tour-actions { display: flex; justify-content: space-between; align-items: center; }
+  .btn-tour { padding: 6px 14px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  #tourNext { background: var(--primary-light); color: var(--dark); }
+  #tourSkip { background: transparent; color: #aaa; }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+  @keyframes popIn { to { transform: scale(1); } }
+  @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+  /* --- Responsive --- */
+  @media (max-width: 768px) {
+    .mapboxgl-ctrl-top-right { top: 70px !important; }
+    #toggleSidebar { display: flex !important; top: 15px; left: 15px; }
+    .select-wrapper { top: 15px; right: 15px; }
+    #sidebar { top: 0; left: 0; height: 100dvh; max-height: 100dvh; width: 100%; border-radius: 0; border: none; transform: translateX(-100%); z-index: 2000; }
+    #sidebar.active { transform: translateX(0); }
+    #sidebar.closed { transform: translateX(-100%); }
+    #persistent-player { bottom: 0; left: 0; width: 100%; max-width: 100%; transform: none; border-radius: 24px 24px 0 0; padding: 12px 12px 0 12px; padding-bottom: calc(env(safe-area-inset-bottom) + 15px); background: white; }
+    #soundcloud-player { height: 110px; }
+    .mobile-handle { display: block; width: 40px; height: 4px; background: #ddd; border-radius: 2px; margin: 0 auto 10px auto; }
+    #tourOverlay { bottom: 180px; }
+  }
+</style>
+</head>
+<body>
+
+<button id="toggleSidebar" class="control-pill">
+  <span>☰</span> Route List
+</button>
+
+<div id="sidebar" class="closed"> 
+  <div class="sidebar-header">
+    <div class="sidebar-title-group">
+      <h2>Muckross Park</h2>
+      <div class="sidebar-subtitle">Audio Guided Tour</div>
+    </div>
+    <button id="closeSidebarInner" aria-label="Close Menu">&times;</button>
+  </div>
+  <ul id="stops"></ul>
+</div>
+
+<div id="map-container">
+  <div class="select-wrapper">
+    <select id="styleDropdown">
+      <option value="mapbox://styles/mapbox/outdoors-v12" selected>Outdoors</option>
+      <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
+      <option value="mapbox://styles/mapbox/satellite-streets-v12">Satellite</option>
+      <option value="mapbox://styles/mapbox/light-v11">Light</option>
+      <option value="mapbox://styles/mapbox/dark-v11">Dark</option>
+    </select>
+  </div>
+  
+  <div id="map"></div>
+
+  <div id="persistent-player">
+    <div class="mobile-handle"></div>
+    <iframe id="soundcloud-player" scrolling="no" frameborder="no" allow="autoplay" src=""></iframe>
+    <div class="player-attribution">
+      <a href="https://soundcloud.com/killarneyaudiotours/muckross-park/s-R9Ozy0oiVc8" target="_blank">Muckross Park Audio</a>
+    </div>
+  </div>
+</div>
+
+<div id="audioModal" class="modal">
+  <div class="modal-content">
+    <p id="modal-text">Jump audio to this location?</p>
+    <div class="modal-buttons">
+      <button id="modal-yes" class="btn btn-primary">Yes, Play</button>
+      <button id="modal-no" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="tourOverlay">
+  <div id="tourMessage"></div>
+  <div class="tour-actions">
+    <button id="tourSkip" class="btn-tour">Dismiss</button>
+    <button id="tourNext" class="btn-tour">Next Step</button>
+  </div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://w.soundcloud.com/player/api.js"></script>
+
+<script>
+// ============================================================================
+// SECTION B: TOUR CONFIGURATION
+// ============================================================================
+
+// 1. Map Start Position
+const START_CENTER = [-9.492, 52.013]; 
+const START_ZOOM = 13.5;
+
+// 2. SoundCloud Source URL (Updated to New Track)
+const SC_SRC = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2260504997%3Fsecret_token%3Ds-R9Ozy0oiVc8&color=%238fa87a&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false";
+
+// 3. Audio Timestamps
+const audioTimestamps = [0, 141000, 237000, 439000, 587000, 821000, 968999];
+
+// 4. Mapbox Token
+mapboxgl.accessToken = 'pk.eyJ1IjoiZW9naGFub2QiLCJhIjoiY21lOXFwOGhyMHVvNTJrcXZnY3I1dGlnOSJ9.7g8Xb_w6p8QiMNloqwPVRQ';
+
+// 5. Route Line Data
+const routeGeoJSON = { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[-9.5021,52.01883],[-9.5022,52.01883],[-9.50229,52.01883],[-9.50288,52.01886],[-9.50289,52.01886],[-9.5034,52.01888],[-9.50347,52.01888],[-9.50347,52.01887],[-9.5035,52.01887],[-9.50353,52.01886],[-9.50355,52.01885],[-9.50358,52.01882],[-9.5036,52.01873],[-9.50365,52.01872],[-9.50419,52.01856],[-9.50448,52.01847],[-9.50478,52.0188],[-9.50483,52.01878],[-9.50488,52.01876],[-9.50503,52.01872],[-9.50533,52.01863],[-9.50577,52.01849],[-9.5061,52.01838],[-9.50652,52.01824],[-9.50685,52.01814],[-9.50697,52.0181],[-9.50727,52.018],[-9.50736,52.01797],[-9.50737,52.01797],[-9.50744,52.01793],[-9.50747,52.0179],[-9.50749,52.01786],[-9.50748,52.01783],[-9.50746,52.01776],[-9.5074,52.01765],[-9.5072,52.01731],[-9.507,52.01697],[-9.5069,52.0168],[-9.50681,52.01663],[-9.50675,52.01654],[-9.50671,52.01646],[-9.50661,52.01628],[-9.50649,52.01602],[-9.50642,52.01584],[-9.50638,52.01575],[-9.50637,52.01568],[-9.50636,52.01563],[-9.50635,52.01558],[-9.50634,52.01549],[-9.50634,52.01542],[-9.50636,52.01533],[-9.50639,52.01523],[-9.50639,52.01522],[-9.50644,52.01508],[-9.50645,52.01506],[-9.50647,52.015],[-9.50651,52.01492],[-9.50655,52.01484],[-9.5066,52.01478],[-9.50666,52.01469],[-9.50673,52.01459],[-9.50689,52.0144],[-9.50705,52.01423],[-9.5071,52.01418],[-9.50715,52.01412],[-9.50725,52.01403],[-9.50725,52.01402],[-9.50732,52.01396],[-9.50736,52.01392],[-9.50742,52.01388],[-9.50746,52.01384],[-9.50759,52.01374],[-9.5076,52.01373],[-9.50766,52.01368],[-9.50773,52.01361],[-9.50777,52.01356],[-9.50782,52.01349],[-9.50786,52.01341],[-9.5079,52.0133],[-9.50793,52.0133],[-9.50796,52.01329],[-9.50802,52.01328],[-9.50829,52.01319],[-9.50865,52.0131],[-9.50829,52.01319],[-9.50802,52.01328],[-9.50796,52.01329],[-9.50793,52.0133],[-9.5079,52.0133],[-9.50792,52.01325],[-9.50796,52.01312],[-9.50805,52.01288],[-9.5081,52.01278],[-9.50813,52.0127],[-9.50816,52.01261],[-9.50818,52.01254],[-9.50819,52.01248],[-9.5082,52.01245],[-9.50821,52.01239],[-9.50821,52.01232],[-9.50822,52.01224],[-9.50821,52.01219],[-9.50819,52.01214],[-9.50816,52.01207],[-9.5081,52.01198],[-9.50804,52.01191],[-9.50799,52.01185],[-9.5079,52.01174],[-9.5076,52.01142],[-9.50757,52.01138],[-9.50743,52.01122],[-9.50724,52.01101],[-9.50719,52.01095],[-9.50716,52.01091],[-9.50714,52.01088],[-9.50712,52.01082],[-9.5071,52.01075],[-9.50708,52.01069],[-9.50708,52.01062],[-9.50707,52.01051],[-9.50708,52.01044],[-9.5071,52.01036],[-9.50712,52.01027],[-9.50715,52.0102],[-9.50718,52.01014],[-9.50721,52.01009],[-9.50725,52.01004],[-9.50732,52.00997],[-9.50753,52.00977],[-9.50773,52.00957],[-9.50801,52.0093],[-9.50822,52.00913],[-9.50823,52.00912],[-9.50839,52.00899],[-9.50865,52.00878],[-9.50898,52.00848],[-9.50907,52.0084],[-9.50943,52.00809],[-9.50956,52.00795],[-9.50973,52.00778],[-9.50982,52.00763],[-9.50986,52.00759],[-9.50989,52.00746],[-9.50989,52.00743],[-9.50991,52.00722],[-9.50992,52.0071],[-9.50993,52.00699],[-9.50993,52.00695],[-9.50991,52.0069],[-9.50987,52.00683],[-9.50977,52.00662],[-9.50971,52.00656],[-9.50965,52.00651],[-9.50958,52.00646],[-9.50944,52.00642],[-9.50932,52.00639],[-9.50918,52.00635],[-9.50908,52.00633],[-9.50895,52.00629],[-9.50864,52.00622],[-9.5083,52.00614],[-9.50826,52.00613],[-9.5081,52.0061],[-9.50788,52.00607],[-9.50769,52.00606],[-9.50764,52.00605],[-9.50743,52.00606],[-9.50737,52.00607],[-9.50708,52.00609],[-9.50699,52.0061],[-9.50695,52.00611],[-9.5069,52.00612],[-9.50684,52.00616],[-9.50664,52.0063],[-9.50635,52.00651],[-9.50613,52.00667],[-9.5061,52.00669],[-9.50598,52.00677],[-9.50593,52.0068],[-9.50586,52.00684],[-9.50575,52.0069],[-9.50563,52.00697],[-9.50549,52.00704],[-9.50547,52.00705],[-9.50526,52.00715],[-9.5052,52.00718],[-9.50502,52.00725],[-9.50457,52.00745],[-9.50434,52.00757],[-9.50408,52.00771],[-9.5039,52.00781],[-9.50368,52.00794],[-9.50357,52.00803],[-9.5035,52.00808],[-9.50344,52.00813],[-9.50335,52.0082],[-9.50332,52.00823],[-9.50327,52.00828],[-9.50321,52.00836],[-9.50319,52.00839],[-9.50313,52.00847],[-9.50308,52.00855],[-9.503,52.00867],[-9.50297,52.00872],[-9.50278,52.00906],[-9.50273,52.00915],[-9.50268,52.00923],[-9.50248,52.00958],[-9.50234,52.00985],[-9.50226,52.01002],[-9.50219,52.01022],[-9.50218,52.01026],[-9.50216,52.01035],[-9.50212,52.01044],[-9.50212,52.01046],[-9.50207,52.01056],[-9.50203,52.01061],[-9.50201,52.01064],[-9.50194,52.0107],[-9.50177,52.01082],[-9.50166,52.01088],[-9.50144,52.01102],[-9.50127,52.01113],[-9.50116,52.01121],[-9.50103,52.0113],[-9.50091,52.0114],[-9.50084,52.01146],[-9.50103,52.01161],[-9.50124,52.01176],[-9.50136,52.01187],[-9.50155,52.01204],[-9.50168,52.01216],[-9.5017,52.01218],[-9.5018,52.01227],[-9.50187,52.01232],[-9.50192,52.01235],[-9.50196,52.01238],[-9.50201,52.01242],[-9.50205,52.01246],[-9.50206,52.01246],[-9.50207,52.01248],[-9.50207,52.01249],[-9.50206,52.01251],[-9.50205,52.01252],[-9.50204,52.01253],[-9.50201,52.01254],[-9.50196,52.01256],[-9.50189,52.01258],[-9.50187,52.01259],[-9.50177,52.01263],[-9.50164,52.01267],[-9.50152,52.01271],[-9.50138,52.01276],[-9.50113,52.01285],[-9.50103,52.01289],[-9.50095,52.01293],[-9.5009,52.01296],[-9.50087,52.013],[-9.50084,52.01303],[-9.50083,52.01305],[-9.50083,52.01309],[-9.50084,52.01312],[-9.50084,52.01313],[-9.50085,52.01316],[-9.50088,52.0132],[-9.50094,52.01325],[-9.50101,52.0133],[-9.50112,52.01337],[-9.50119,52.01342],[-9.5012,52.01343],[-9.50129,52.01349],[-9.50136,52.01357],[-9.50143,52.01363],[-9.50154,52.01376],[-9.50162,52.01386],[-9.50166,52.01391],[-9.50168,52.01394],[-9.50169,52.01396],[-9.5017,52.014],[-9.50171,52.01403],[-9.5017,52.01407],[-9.50169,52.01411],[-9.50167,52.01415],[-9.50163,52.01424],[-9.50154,52.01431],[-9.50139,52.01445],[-9.5013,52.01454],[-9.50122,52.01462],[-9.50115,52.01468],[-9.501,52.01481],[-9.50081,52.01498],[-9.50064,52.01513],[-9.50062,52.01515],[-9.50048,52.01528],[-9.50044,52.01531],[-9.50031,52.01543],[-9.50023,52.0155],[-9.50015,52.01556],[-9.50014,52.01557],[-9.50009,52.0156],[-9.50004,52.01562],[-9.49996,52.01566],[-9.49991,52.01568],[-9.49988,52.01569],[-9.49981,52.01571],[-9.49971,52.01574],[-9.49964,52.01575],[-9.4996,52.01576],[-9.49949,52.01579],[-9.4994,52.01582],[-9.49937,52.01582],[-9.49932,52.01584],[-9.49923,52.01587],[-9.49915,52.01591],[-9.49913,52.01592],[-9.49911,52.01594],[-9.49906,52.01597],[-9.49899,52.01605],[-9.49897,52.01607],[-9.4989,52.01615],[-9.49881,52.01623],[-9.4987,52.01632],[-9.49863,52.01636],[-9.49859,52.01639],[-9.4985,52.01643],[-9.49844,52.01646],[-9.49841,52.01648],[-9.49835,52.01651],[-9.49826,52.01656],[-9.49816,52.01663],[-9.4981,52.01667],[-9.49806,52.0167],[-9.49804,52.01674],[-9.49799,52.0168],[-9.49796,52.01685],[-9.49793,52.01691],[-9.49792,52.01694],[-9.49792,52.01698],[-9.49792,52.01702],[-9.49793,52.01707],[-9.49815,52.01704],[-9.49839,52.017],[-9.49861,52.01697],[-9.49865,52.01696],[-9.49883,52.01693],[-9.49889,52.01692],[-9.499,52.01691],[-9.49911,52.0169],[-9.49918,52.0169],[-9.4992,52.0169],[-9.49927,52.0169],[-9.49933,52.01692],[-9.4994,52.01693],[-9.49945,52.01695],[-9.49946,52.01695],[-9.49953,52.01699],[-9.49961,52.01703],[-9.49968,52.01707],[-9.49975,52.01712],[-9.49981,52.01717],[-9.49986,52.01721],[-9.49987,52.01722],[-9.49993,52.0173],[-9.49997,52.01737],[-9.49999,52.01741],[-9.50002,52.01749],[-9.50004,52.01755],[-9.50004,52.01757],[-9.50008,52.01772],[-9.50008,52.01773],[-9.50012,52.01791],[-9.50012,52.01793],[-9.50014,52.01803],[-9.50016,52.01808],[-9.50017,52.01811],[-9.50019,52.01817],[-9.50024,52.01823],[-9.50026,52.01825],[-9.50027,52.01827],[-9.50031,52.01831],[-9.50041,52.01837],[-9.50044,52.01839],[-9.50053,52.01844],[-9.50066,52.01851],[-9.5007,52.01853],[-9.50089,52.01862],[-9.50097,52.01866],[-9.50103,52.01869],[-9.50112,52.01871],[-9.50121,52.01873],[-9.50129,52.01875],[-9.50141,52.01878],[-9.50151,52.0188],[-9.50158,52.01881],[-9.50163,52.01883],[-9.50168,52.01886],[-9.50174,52.01889],[-9.50183,52.01895],[-9.50193,52.01905],[-9.50196,52.01907],[-9.50201,52.01903],[-9.50204,52.019],[-9.50205,52.01896],[-9.50206,52.01893],[-9.50207,52.0189]] } };
+
+// 6. Tour Stops Data
+const pointsGeoJSON = { 
+  "type":"FeatureCollection",
+  "features":[
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5021063,52.0188318,0]},"properties":{"name":"START - Welcome to Muckross Park"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5044801,52.018472,0]},"properties":{"name":"2 - Muckross House"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5069769,52.0169182,0]},"properties":{"name":"3 - Lake & Boathouse"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5086521,52.0130966,0]},"properties":{"name":"4 - Dundag Beach"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5071953,52.0109343,0]},"properties":{"name":"5 - Torc Mountain"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5065582,52.0063439,0]},"properties":{"name":"6 - Muckross Wildlife"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5008777,52.0115037,0]},"properties":{"name":"7 - Trivia"}},
+    {"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5021063,52.0189100,0]},"properties":{"name":"End"}}
+  ]
+};
+
+// ============================================================================
+// END CONFIGURATION
+// ============================================================================
+
+// --- Initialize Player ---
+document.getElementById('soundcloud-player').src = SC_SRC;
+
+// --- Initialize Map ---
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/outdoors-v12', 
+  center: START_CENTER,
+  zoom: START_ZOOM,
+  pitch: 60,
+  bearing: -100,
+  antialias: true
+});
+
+map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+map.addControl(new mapboxgl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserHeading: true
+}), 'top-right');
+
+// --- Sidebar Logic ---
+const sidebar = document.getElementById('sidebar');
+const toggleBtn = document.getElementById('toggleSidebar');
+const closeBtnInner = document.getElementById('closeSidebarInner');
+
+function initSidebarState() {
+  if (window.innerWidth > 768) { sidebar.classList.remove('closed'); } 
+  else { sidebar.classList.add('closed'); }
+}
+initSidebarState();
+
+toggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  sidebar.classList.toggle('closed');
+  sidebar.classList.toggle('active');
+});
+
+closeBtnInner.addEventListener('click', () => {
+  sidebar.classList.add('closed');
+  sidebar.classList.remove('active');
+});
+
+map.on('click', () => {
+  if (window.innerWidth <= 768 && !sidebar.classList.contains('closed')) {
+    sidebar.classList.add('closed');
+    sidebar.classList.remove('active');
+  }
+});
+
+// --- Audio Logic ---
+const iframeElement = document.getElementById('soundcloud-player');
+const widget = SC.Widget(iframeElement);
+let markerObjects = [];
+
+function showAudioConfirm(callback) {
+  const modal = document.getElementById('audioModal');
+  const yesBtn = document.getElementById('modal-yes');
+  const noBtn = document.getElementById('modal-no');
+  modal.style.display = 'flex'; 
+  
+  const newYes = yesBtn.cloneNode(true);
+  const newNo = noBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newYes, yesBtn);
+  noBtn.parentNode.replaceChild(newNo, noBtn);
+
+  newYes.onclick = () => { modal.style.display='none'; callback(true); };
+  newNo.onclick = () => { modal.style.display='none'; callback(false); };
+}
+
+function addMarkers() {
+  pointsGeoJSON.features.forEach((point, index) => {
+    const popup = new mapboxgl.Popup({ offset: 25 }).setText(point.properties.name);
+    const el = document.createElement('div');
+    el.className = 'marker'; 
+    if(index === 0) {
+      el.textContent = 'Start';
+      el.classList.add('marker-start');
+    } else if(index === pointsGeoJSON.features.length - 1) {
+      el.textContent = 'End';
+      el.classList.add('marker-end');
+    } else {
+      el.textContent = index + 1;
+      el.classList.add('marker-node');
+    }
+    const marker = new mapboxgl.Marker(el)
+      .setLngLat(point.geometry.coordinates)
+      .setPopup(popup)
+      .addTo(map);
+    markerObjects.push(marker);
+  });
+}
+
+function populateSidebar() {
+  const list = document.getElementById('stops');
+  list.innerHTML = '';
+  pointsGeoJSON.features.forEach((point, index) => {
+    const li = document.createElement('li');
+    li.textContent = point.properties.name;
+    li.addEventListener('click', () => {
+      if(window.innerWidth <= 768) {
+        sidebar.classList.add('closed');
+        sidebar.classList.remove('active');
+      }
+      const timestamp = audioTimestamps[index];
+      map.flyTo({ center: point.geometry.coordinates, zoom: 16, pitch: 60 });
+      showAudioConfirm((playFromHere) => {
+        if (playFromHere && timestamp !== undefined) {
+          widget.seekTo(timestamp);
+          widget.play();
+        }
+      });
+    });
+    list.appendChild(li);
+  });
+}
+
+function addRoute() {
+  if (map.getSource('route')) return;
+  map.addSource('route', { type: 'geojson', data: routeGeoJSON });
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#ff4d4d', 'line-width': 5, 'line-opacity': 0.8 }
+  });
+}
+
+map.on('load', () => {
+  addMarkers();
+  populateSidebar();
+  addRoute();
+});
+
+document.getElementById('styleDropdown').addEventListener('change', function(){
+  const c = map.getCenter(), z = map.getZoom(), p = map.getPitch(), b = map.getBearing();
+  map.setStyle(this.value);
+  map.once('styledata', ()=>{
+    map.jumpTo({center:c, zoom:z, pitch:p, bearing:b});
+    addMarkers();
+    addRoute();
+  });
+});
+
+/* --- Guided Tour Logic --- */
+const tourSteps = [
+  { message: "📍 Enable your live location to see yourself on the map.", selector: '.mapboxgl-ctrl-geolocate' },
+  { message: "🎧 Use the Route List menu to jump to specific stops.", selector: '#toggleSidebar' },
+  { message: "🗺️ Switch between map styles using this dropdown.", selector: '#styleDropdown' }
+];
+
+let tourIndex = 0;
+const tourOverlay = document.getElementById('tourOverlay');
+const tourMessage = document.getElementById('tourMessage');
+const tourNext = document.getElementById('tourNext');
+const tourSkip = document.getElementById('tourSkip');
+
+function showTourStep(index) {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+  if (index >= tourSteps.length) {
+    tourOverlay.style.display = 'none';
+    return;
+  }
+  tourMessage.innerHTML = tourSteps[index].message;
+  tourOverlay.style.display = 'block';
+  tourNext.textContent = (index === tourSteps.length - 1) ? 'Finish' : 'Next';
+  const selector = tourSteps[index].selector;
+  if (selector) {
+    const target = document.querySelector(selector);
+    if (target) target.classList.add('highlight-active');
+  }
+}
+
+tourNext.addEventListener('click', () => {
+  tourIndex++;
+  showTourStep(tourIndex);
+});
+
+tourSkip.addEventListener('click', () => {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+  tourOverlay.style.display = 'none';
+});
+
+window.addEventListener('load', () => {
+  tourIndex = 0;
+  setTimeout(() => showTourStep(tourIndex), 1500);
+});
+</script>
+</body>
+</html>

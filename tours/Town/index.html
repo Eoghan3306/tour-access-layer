@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Killarney Town Audio Tour</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --primary: #8fa87a;
+    --primary-light: #b7cba9;
+    --dark: #2c3e50;
+    --light: #ffffff;
+    --gray: #f5f7fa;
+    --shadow: 0 8px 30px rgba(0,0,0,0.12);
+    --radius: 12px;
+    --transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    --highlight-color: #ff3333; /* Brighter Red */
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body { 
+    margin: 0; 
+    padding: 0; 
+    font-family: 'Inter', sans-serif; 
+    display: flex; 
+    height: 100vh; 
+    height: 100dvh; 
+    overflow: hidden;
+    color: var(--dark);
+    background: var(--gray);
+  }
+
+  /* --- Map Container --- */
+  #map-container { 
+    flex: 1; 
+    position: relative; 
+    display: flex; 
+    flex-direction: column; 
+    height: 100%;
+    width: 100%;
+  }
+
+  #map { 
+    width: 100%; 
+    height: 100%; 
+    flex: 1; 
+    outline: none;
+  }
+
+  /* --- Sidebar / Drawer --- */
+  #sidebar { 
+    position: absolute; 
+    top: 20px; 
+    left: 20px; 
+    width: 280px; 
+    max-height: calc(100vh - 180px); 
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: var(--radius);
+    padding: 0;
+    box-shadow: var(--shadow);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(0);
+    transition: transform var(--transition);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  
+  #sidebar.closed {
+    transform: translateX(-150%);
+  }
+
+  .sidebar-header {
+    padding: 16px 20px;
+    background: var(--primary-light);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-title-group h2 { 
+    font-size: 16px; 
+    margin: 0; 
+    font-weight: 700;
+    color: var(--dark);
+  }
+  
+  .sidebar-subtitle {
+    font-size: 11px;
+    opacity: 0.8;
+    color: var(--dark);
+    margin-top: 2px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  #closeSidebarInner {
+    background: rgba(255,255,255,0.3);
+    border: none;
+    color: var(--dark);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+  #closeSidebarInner:hover { background: rgba(255,255,255,0.6); }
+
+  #stops { 
+    list-style: none; 
+    padding: 0; 
+    margin: 0; 
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #stops li { 
+    padding: 16px 20px; 
+    cursor: pointer; 
+    border-bottom: 1px solid rgba(0,0,0,0.05); 
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+  }
+
+  #stops li:hover { 
+    background: #f0f4ec; 
+    color: var(--primary);
+  }
+
+  #stops li::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--primary-light);
+    border-radius: 50%;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+
+  /* --- Persistent Audio Player --- */
+  #persistent-player {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 420px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+    z-index: 50;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.6);
+    transition: bottom 0.3s ease;
+  }
+
+  #soundcloud-player {
+    width: 100%;
+    height: 120px;
+    border: none;
+    border-radius: 8px;
+    display: block;
+    background: #f5f5f5; 
+  }
+
+  .player-attribution {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+    margin-top: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .player-attribution a { color: var(--primary); text-decoration: none; font-weight: 600; }
+  
+  .mobile-handle { display: none; }
+
+  /* --- Top Buttons (Mirrored Styling) --- */
+  .control-pill {
+    position: absolute;
+    top: 20px;
+    z-index: 40;
+    background: var(--dark);
+    color: white;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    transition: transform 0.1s, background 0.2s;
+  }
+  .control-pill:active { transform: scale(0.98); }
+
+  #toggleSidebar {
+    left: 20px;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  
+  body:not(.sidebar-closed) #toggleSidebar {
+    display: none;
+  }
+
+  .select-wrapper {
+    position: absolute;
+    top: 20px;
+    right: 20px; 
+    z-index: 40;
+  }
+
+  #styleDropdown { 
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--dark);
+    color: white;
+    border: none;
+    border-radius: 30px;
+    padding: 10px 36px 10px 20px; 
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px top 50%;
+    background-size: 10px auto;
+  }
+
+  .mapboxgl-ctrl-top-right {
+    top: 65px !important; 
+    right: 20px !important;
+  }
+
+  /* --- AGGRESSIVE PULSE HIGHLIGHT ANIMATION --- */
+  @keyframes pulse-ring {
+    0% { 
+      box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.9); 
+    }
+    70% { 
+      box-shadow: 0 0 0 25px rgba(255, 51, 51, 0); 
+    }
+    100% { 
+      box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); 
+    }
+  }
+
+  .highlight-active {
+    animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; /* Faster, punchier loop */
+    position: relative;
+    z-index: 9999 !important; /* Ensure it pops over map */
+    transition: all 0.3s;
+    transform: scale(1.05); /* Make the button slightly bigger when active */
+    border: 2px solid var(--highlight-color) !important; /* Force red border */
+  }
+  
+  /* Force rounded shape for compass button */
+  .mapboxgl-ctrl-geolocate.highlight-active {
+    border-radius: 50% !important;
+  }
+
+  /* Force pill shape and PREVENT EXPANSION for Route List */
+  #toggleSidebar.highlight-active {
+    position: absolute; /* Vital fix to keep it absolute/pill shaped */
+  }
+
+  /* --- Markers --- */
+  .marker {
+    background-size: cover;
+    background-color: var(--primary-light);
+    border: 2px solid white;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    transition: transform 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .marker:hover {
+    transform: scale(1.15);
+    z-index: 50;
+    border-color: var(--dark);
+  }
+  .marker-node { width: 28px; height: 28px; border-radius: 50%; color: white; font-size: 12px; }
+  .marker-start { width: 50px; height: 50px; background-color: var(--dark); color: white; border-radius: 50%; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 3px solid white; }
+  .marker-end { width: 40px; height: 40px; background-color: #e74c3c; color: white; border-radius: 50%; font-size: 10px; font-weight: 700; border: 3px solid white; }
+
+  /* --- Modals --- */
+  .modal { 
+    display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; 
+    background-color: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center; 
+    opacity: 0; animation: fadeIn 0.3s forwards;
+  }
+  .modal-content { 
+    background: white; padding: 24px 32px; border-radius: 16px; max-width: 320px; 
+    text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    transform: scale(0.9); animation: popIn 0.3s forwards;
+  }
+  .modal-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+  .btn { padding: 10px 24px; border: none; border-radius: 30px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--dark); color: white; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+
+  /* --- Guided Tour --- */
+  #tourOverlay {
+    position: fixed;
+    bottom: 220px; 
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(44, 62, 80, 0.95);
+    color: white;
+    padding: 20px;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 340px;
+    text-align: center;
+    z-index: 10000; /* Highest */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    display: none;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  #tourMessage { font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
+  .tour-actions { display: flex; justify-content: space-between; align-items: center; }
+  .btn-tour { padding: 6px 14px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  #tourNext { background: var(--primary-light); color: var(--dark); }
+  #tourSkip { background: transparent; color: #aaa; }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+  @keyframes popIn { to { transform: scale(1); } }
+  @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+  /* --- Responsive Design --- */
+  @media (max-width: 768px) {
+    .mapboxgl-ctrl-top-right { top: 70px !important; }
+    #toggleSidebar { display: flex !important; top: 15px; left: 15px; }
+    .select-wrapper { top: 15px; right: 15px; }
+
+    #sidebar {
+      top: 0; left: 0; height: 100dvh; max-height: 100dvh; width: 100%; 
+      border-radius: 0; border: none;
+      transform: translateX(-100%); 
+      z-index: 2000; 
+    }
+    #sidebar.active { transform: translateX(0); }
+    #sidebar.closed { transform: translateX(-100%); }
+
+    #persistent-player {
+      bottom: 0; left: 0; width: 100%; max-width: 100%; transform: none;
+      border-radius: 24px 24px 0 0;
+      padding: 12px 12px 0 12px;
+      padding-bottom: calc(env(safe-area-inset-bottom) + 15px);
+      background: white;
+    }
+    #soundcloud-player { height: 110px; }
+    .mobile-handle { display: block; width: 40px; height: 4px; background: #ddd; border-radius: 2px; margin: 0 auto 10px auto; }
+    #tourOverlay { bottom: 180px; }
+  }
+</style>
+</head>
+<body>
+
+<button id="toggleSidebar" class="control-pill">
+  <span>☰</span> Route List
+</button>
+
+<div id="sidebar" class="closed"> 
+  <div class="sidebar-header">
+    <div class="sidebar-title-group">
+      <h2>Killarney Town</h2>
+      <div class="sidebar-subtitle">Audio Guided Tour</div>
+    </div>
+    <button id="closeSidebarInner" aria-label="Close Menu">&times;</button>
+  </div>
+  <ul id="stops"></ul>
+</div>
+
+<div id="map-container">
+  <div class="select-wrapper">
+    <select id="styleDropdown">
+      <option value="mapbox://styles/mapbox/streets-v12" >Streets</option>
+      <option value="mapbox://styles/mapbox/outdoors-v12"selected>Outdoors</option>
+      <option value="mapbox://styles/mapbox/satellite-streets-v12">Satellite</option>
+      <option value="mapbox://styles/mapbox/light-v11">Light</option>
+      <option value="mapbox://styles/mapbox/dark-v11">Dark</option>
+    </select>
+  </div>
+  
+  <div id="map"></div>
+
+  <div id="persistent-player">
+    <div class="mobile-handle"></div>
+    <iframe 
+      id="soundcloud-player" 
+      scrolling="no" 
+      frameborder="no" 
+      allow="autoplay"
+      src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/2260524701%3Fsecret_token%3Ds-kxAa2C3aALf&color=%238fa87a&auto_play=false&hide_related=false&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false">
+    </iframe>
+    <div class="player-attribution">
+      <a href="https://soundcloud.com/killarneyaudiotours" target="_blank">Killarney Audio Tours</a>
+    </div>
+  </div>
+</div>
+
+<div id="audioModal" class="modal">
+  <div class="modal-content">
+    <p id="modal-text">Jump audio to this location?</p>
+    <div class="modal-buttons">
+      <button id="modal-yes" class="btn btn-primary">Yes, Play</button>
+      <button id="modal-no" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="tourOverlay">
+  <div id="tourMessage"></div>
+  <div class="tour-actions">
+    <button id="tourSkip" class="btn-tour">Dismiss</button>
+    <button id="tourNext" class="btn-tour">Next Step</button>
+  </div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://w.soundcloud.com/player/api.js"></script>
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiZW9naGFub2QiLCJhIjoiY21lOXFwOGhyMHVvNTJrcXZnY3I1dGlnOSJ9.7g8Xb_w6p8QiMNloqwPVRQ';
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/navigation-day-v1',
+  center: [-9.5015, 52.0595], 
+  zoom: 14,
+  pitch: 20,
+  bearing: -100,
+  antialias: true
+});
+
+map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+map.addControl(new mapboxgl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserHeading: true
+}), 'top-right');
+
+const sidebar = document.getElementById('sidebar');
+const toggleBtn = document.getElementById('toggleSidebar');
+const closeBtnInner = document.getElementById('closeSidebarInner');
+
+function initSidebarState() {
+  if (window.innerWidth > 768) {
+    sidebar.classList.remove('closed'); 
+  } else {
+    sidebar.classList.add('closed'); 
+  }
+}
+initSidebarState();
+
+toggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  sidebar.classList.toggle('closed');
+  sidebar.classList.toggle('active');
+});
+
+closeBtnInner.addEventListener('click', () => {
+  sidebar.classList.add('closed');
+  sidebar.classList.remove('active');
+});
+
+map.on('click', () => {
+  if (window.innerWidth <= 768 && !sidebar.classList.contains('closed')) {
+    sidebar.classList.add('closed');
+    sidebar.classList.remove('active');
+  }
+});
+
+const iframeElement = document.getElementById('soundcloud-player');
+const widget = SC.Widget(iframeElement);
+
+const audioTimestamps = [0, 143000, 336000, 400000, 547000, 601000, 665000];
+const routeGeoJSON = { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[-9.50466,52.05948],[-9.50466,52.05956],[-9.50462,52.05965],[-9.5046,52.05973],[-9.50455,52.05987],[-9.50456,52.05988],[-9.50457,52.05988],[-9.50457,52.05989],[-9.50458,52.0599],[-9.50458,52.05991],[-9.50459,52.05992],[-9.50467,52.05992],[-9.50476,52.05992],[-9.50497,52.05992],[-9.50505,52.0599],[-9.5054,52.05987],[-9.50544,52.05987],[-9.50545,52.05986],[-9.50558,52.05985],[-9.50565,52.05984],[-9.50591,52.05977],[-9.50596,52.05976],[-9.50597,52.05976],[-9.50597,52.05975],[-9.50598,52.05975],[-9.50599,52.05975],[-9.506,52.05975],[-9.50601,52.05975],[-9.50607,52.05971],[-9.50615,52.05966],[-9.50618,52.05964],[-9.50626,52.05958],[-9.50633,52.05956],[-9.50638,52.05954],[-9.50651,52.05944],[-9.5067,52.05926],[-9.50682,52.05914],[-9.5069,52.05907],[-9.50695,52.05903],[-9.50705,52.05895],[-9.50712,52.0589],[-9.50739,52.05879],[-9.50743,52.05877],[-9.50746,52.05876],[-9.50753,52.05875],[-9.50765,52.05872],[-9.5078,52.05869],[-9.50785,52.05868],[-9.50904,52.05844],[-9.509,52.05835],[-9.50895,52.05825],[-9.5089,52.05818],[-9.50884,52.05811],[-9.50879,52.05805],[-9.50875,52.058],[-9.5087,52.05794],[-9.50866,52.05789],[-9.50863,52.05785],[-9.50858,52.0578],[-9.5085,52.05778],[-9.5084,52.05776],[-9.50834,52.05775],[-9.50827,52.05773],[-9.50828,52.0577],[-9.50829,52.05768],[-9.50829,52.05767],[-9.50829,52.05766],[-9.50829,52.05765],[-9.50829,52.05764],[-9.50829,52.05763],[-9.50829,52.05762],[-9.50828,52.0576],[-9.50827,52.05759],[-9.50826,52.05758],[-9.50821,52.05755],[-9.50839,52.05751],[-9.50845,52.0575],[-9.50858,52.05748],[-9.51,52.05735],[-9.51048,52.05733],[-9.51095,52.0573],[-9.51108,52.05726],[-9.51131,52.05727],[-9.51151,52.05726],[-9.51162,52.05724],[-9.51174,52.05723],[-9.51185,52.05721],[-9.51194,52.05719],[-9.51202,52.05716],[-9.51209,52.05714],[-9.51218,52.0571],[-9.51225,52.05707],[-9.51236,52.05704],[-9.5125,52.05702],[-9.51265,52.057],[-9.51277,52.05699],[-9.51288,52.05699],[-9.51298,52.05699],[-9.5131,52.057],[-9.51321,52.05701],[-9.51335,52.05703],[-9.51351,52.05705],[-9.51378,52.05707],[-9.51402,52.05708],[-9.51426,52.0571],[-9.51444,52.05711],[-9.51453,52.05711],[-9.51465,52.05712],[-9.51478,52.05714],[-9.51487,52.05717],[-9.51495,52.0572],[-9.51502,52.05723],[-9.5151,52.05728],[-9.51521,52.05735],[-9.5153,52.05742],[-9.51537,52.05746],[-9.51549,52.05753],[-9.5156,52.05758],[-9.51572,52.05763],[-9.51583,52.05766],[-9.51595,52.05769],[-9.51606,52.0577],[-9.51619,52.05771],[-9.51639,52.05771],[-9.51657,52.05771],[-9.51665,52.05771],[-9.51671,52.05772],[-9.51682,52.05774],[-9.51691,52.05776],[-9.51698,52.05778],[-9.51706,52.05781],[-9.51715,52.05784],[-9.51724,52.05788],[-9.51747,52.05799],[-9.51769,52.0581],[-9.51786,52.05817],[-9.51795,52.05821],[-9.51804,52.05824],[-9.51816,52.05827],[-9.5183,52.0583],[-9.51837,52.05832],[-9.51845,52.05836],[-9.51847,52.05836],[-9.51854,52.05841],[-9.5186,52.05845],[-9.51862,52.05849],[-9.51864,52.05853],[-9.51866,52.05858],[-9.51866,52.05863],[-9.51866,52.05869],[-9.51865,52.05881],[-9.51858,52.05881],[-9.51853,52.05882],[-9.51848,52.05884],[-9.51845,52.05885],[-9.51843,52.05886],[-9.5184,52.05886],[-9.51829,52.05893],[-9.51822,52.05893],[-9.51815,52.05892],[-9.51805,52.05891],[-9.51793,52.05889],[-9.51764,52.05884],[-9.51751,52.0588],[-9.51745,52.05877],[-9.51739,52.05874],[-9.51716,52.05863],[-9.51708,52.05859],[-9.51706,52.05857],[-9.51688,52.05848],[-9.51679,52.05843],[-9.51671,52.05837],[-9.51666,52.05834],[-9.51662,52.05832],[-9.51656,52.05829],[-9.51652,52.05828],[-9.51646,52.05827],[-9.51641,52.05827],[-9.51635,52.05827],[-9.51624,52.05828],[-9.51508,52.05844],[-9.51441,52.05853],[-9.51367,52.05863],[-9.51338,52.05868],[-9.51322,52.05868],[-9.51296,52.05875],[-9.5129,52.05876],[-9.51269,52.05878],[-9.51168,52.05892],[-9.51155,52.05894],[-9.51138,52.05897],[-9.51135,52.05897],[-9.51122,52.05899],[-9.51112,52.059],[-9.51073,52.05903],[-9.50948,52.05921],[-9.50939,52.05916]] } };
+const pointsGeoJSON = { "type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5045194,52.0594781,0]},"properties":{"name":"START - Railway Station & Great Southern Hotel"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.504879,52.0597957,0]},"properties":{"name":"2. Courthouse & Franciscan Friary "}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5087364,52.0580738,0]},"properties":{"name":"3. St. Mary’s Church of Ireland & Jarvey’s"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5109551,52.0572212,0]},"properties":{"name":"4. Killarney House & Monsignor Hugh O Flaherty "}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5179931,52.0589405,0]},"properties":{"name":"5. St Mary's Cathedral"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5161625,52.0582967,0]},"properties":{"name":"6. Killarney's Famous People"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[-9.5093926,52.0591675,0]},"properties":{"name":"END - Market Cross "}}
+]};
+
+let markerObjects = [];
+
+function showAudioConfirm(callback) {
+  const modal = document.getElementById('audioModal');
+  const yesBtn = document.getElementById('modal-yes');
+  const noBtn = document.getElementById('modal-no');
+  modal.style.display = 'flex'; 
+  
+  const newYes = yesBtn.cloneNode(true);
+  const newNo = noBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newYes, yesBtn);
+  noBtn.parentNode.replaceChild(newNo, noBtn);
+
+  newYes.onclick = () => { modal.style.display='none'; callback(true); };
+  newNo.onclick = () => { modal.style.display='none'; callback(false); };
+}
+
+function addMarkers() {
+  pointsGeoJSON.features.forEach((point, index) => {
+    const popup = new mapboxgl.Popup({ offset: 25 }).setText(point.properties.name);
+    const el = document.createElement('div');
+    el.className = 'marker'; 
+    if(index === 0) {
+      el.textContent = 'Start';
+      el.classList.add('marker-start');
+    } else if(index === pointsGeoJSON.features.length - 1) {
+      el.textContent = 'End';
+      el.classList.add('marker-end');
+    } else {
+      el.textContent = index + 1;
+      el.classList.add('marker-node');
+    }
+    const marker = new mapboxgl.Marker(el)
+      .setLngLat(point.geometry.coordinates)
+      .setPopup(popup)
+      .addTo(map);
+    markerObjects.push(marker);
+  });
+}
+
+function populateSidebar() {
+  const list = document.getElementById('stops');
+  list.innerHTML = '';
+  pointsGeoJSON.features.forEach((point, index) => {
+    const li = document.createElement('li');
+    li.textContent = point.properties.name;
+    li.addEventListener('click', () => {
+      if(window.innerWidth <= 768) {
+        sidebar.classList.add('closed');
+        sidebar.classList.remove('active');
+      }
+      const timestamp = audioTimestamps[index];
+      map.flyTo({ center: point.geometry.coordinates, zoom: 16, pitch: 60 });
+      showAudioConfirm((playFromHere) => {
+        if (playFromHere) {
+          widget.seekTo(timestamp);
+          widget.play();
+        }
+      });
+    });
+    list.appendChild(li);
+  });
+}
+
+function addRoute() {
+  if (map.getSource('route')) return;
+  map.addSource('route', { type: 'geojson', data: routeGeoJSON });
+  map.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 
+      'line-color': '#ff4d4d', 
+      'line-width': 5,
+      'line-opacity': 0.8
+    }
+  });
+}
+
+map.on('load', () => {
+  addMarkers();
+  populateSidebar();
+  addRoute();
+});
+
+document.getElementById('styleDropdown').addEventListener('change', function(){
+  const c = map.getCenter(), z = map.getZoom(), p = map.getPitch(), b = map.getBearing();
+  map.setStyle(this.value);
+  map.once('styledata', ()=>{
+    map.jumpTo({center:c, zoom:z, pitch:p, bearing:b});
+    addMarkers();
+    addRoute();
+  });
+});
+
+/* -------------------- Guided Tour Logic -------------------- */
+const tourSteps = [
+  { message: "📍 Enable your live location to see yourself on the map.", selector: '.mapboxgl-ctrl-geolocate' },
+  { message: "Use the Route List menu to jump to specific stops.", selector: '#toggleSidebar' },
+  { message: "Switch between map styles using this dropdown.", selector: '#styleDropdown' }
+];
+
+let tourIndex = 0;
+const tourOverlay = document.getElementById('tourOverlay');
+const tourMessage = document.getElementById('tourMessage');
+const tourNext = document.getElementById('tourNext');
+const tourSkip = document.getElementById('tourSkip');
+
+function showTourStep(index) {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+
+  if (index >= tourSteps.length) {
+    tourOverlay.style.display = 'none';
+    return;
+  }
+
+  tourMessage.innerHTML = tourSteps[index].message;
+  tourOverlay.style.display = 'block';
+  tourNext.textContent = (index === tourSteps.length - 1) ? 'Finish' : 'Next';
+
+  const selector = tourSteps[index].selector;
+  if (selector) {
+    const target = document.querySelector(selector);
+    if (target) {
+      target.classList.add('highlight-active');
+    }
+  }
+}
+
+tourNext.addEventListener('click', () => {
+  tourIndex++;
+  showTourStep(tourIndex);
+});
+
+tourSkip.addEventListener('click', () => {
+  document.querySelectorAll('.highlight-active').forEach(el => el.classList.remove('highlight-active'));
+  tourOverlay.style.display = 'none';
+});
+
+window.addEventListener('load', () => {
+  tourIndex = 0;
+  setTimeout(() => showTourStep(tourIndex), 1500);
+});
+
+</script>
+</body>
+</html>
