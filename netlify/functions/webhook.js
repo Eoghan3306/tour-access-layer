@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Normalize product names to avoid special character issues
 function normalizeName(name) {
   if (!name) return "";
   return String(name)
@@ -16,7 +15,14 @@ function normalizeName(name) {
     .replace(/\s+/g, " ");
 }
 
-// Product → Folder matching
+// Remove draft/duplicate suffixes like "(Copy)" from emails/subject.
+// Keeps DB product value cleaner too.
+function cleanProductForEmail(productName) {
+  return normalizeName(productName)
+    .replace(/\s*\(copy\)\s*$/i, "")
+    .trim();
+}
+
 const MATCH_RULES = [
   { contains: "Killarney Town", folder: "Town" },
   { contains: "Discover Killarney National Park", folder: "National" },
@@ -25,7 +31,6 @@ const MATCH_RULES = [
   { contains: "Ross Island Uncovered", folder: "Ross" },
 ];
 
-// Send access email via Resend
 async function sendAccessEmail({ to, productName, accessUrl }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
@@ -35,38 +40,52 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
   if (!from) throw new Error("Missing RESEND_FROM_EMAIL");
   if (!to) throw new Error("Missing customer email");
 
-  const subject = `Your Tour Access – ${productName}`;
+  const displayName = cleanProductForEmail(productName);
 
-  const text = `
-Thanks for your purchase!
+  const subject = `Your Tour Access Link – ${displayName}`;
 
-Your access link:
-${accessUrl}
+  // Plain-text: URL on its own line => most clients auto-link it
+  const text = [
+    "Thanks for your purchase!",
+    "",
+    `Tour: ${displayName}`,
+    "",
+    "Your access link:",
+    accessUrl,
+    "",
+    "If the link isn’t clickable in your email app, copy and paste it into your browser.",
+    "",
+    "This link can be used on up to 4 devices.",
+    "",
+    "Enjoy your tour!",
+    "Killarney Audio Tours",
+  ].join("\n");
 
-This link can be used on up to 4 devices.
-
-If you need help, just reply to this email.
-
-Enjoy your tour!
-`.trim();
-
+  // HTML: include BOTH a button and a visible clickable URL
   const html = `
-<div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height:1.6;">
-  <h2>Your Tour Access</h2>
-  <p>Thanks for your purchase!</p>
-  <p><strong>${productName}</strong></p>
+<div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height:1.6; font-size:16px;">
+  <h2 style="margin:0 0 12px 0;">Your Tour Access</h2>
+  <p style="margin:0 0 12px 0;">Thanks for your purchase!</p>
+  <p style="margin:0 0 16px 0;"><strong>${displayName}</strong></p>
 
-  <p>
-    <a href="${accessUrl}" 
-       style="display:inline-block;padding:12px 18px;border-radius:8px;
-              text-decoration:none;background:#000;color:#fff;">
-       Open Your Tour
+  <p style="margin:0 0 16px 0;">
+    <a href="${accessUrl}" style="display:inline-block;padding:12px 18px;border-radius:10px;text-decoration:none;background:#111;color:#fff;">
+      Open your tour
     </a>
   </p>
 
-  <p>This link can be used on up to 4 devices.</p>
-  <p>If you need help, just reply to this email.</p>
-  <p>Enjoy your experience,<br/>Killarney Audio Tours</p>
+  <p style="margin:0 0 8px 0;"><strong>Or use this link:</strong></p>
+  <p style="margin:0 0 16px 0; word-break: break-word;">
+    <a href="${accessUrl}">${accessUrl}</a>
+  </p>
+
+  <p style="margin:0 0 12px 0; color:#555;">
+    If the button/link isn’t clickable in your email app, copy and paste the URL into your browser.
+  </p>
+
+  <p style="margin:0 0 12px 0;">This link can be used on up to 4 devices.</p>
+
+  <p style="margin:0;">Enjoy your experience,<br/>Killarney Audio Tours</p>
 </div>
 `.trim();
 
@@ -82,13 +101,13 @@ Enjoy your tour!
       subject,
       text,
       html,
-      ...(replyTo ? { reply_to: replyTo } : {}),
+      ...(replyTo ? { replyTo } : {}), // Resend uses replyTo (camelCase)
     }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Resend error: ${err}`);
+    throw new Error(`Resend error (${response.status}): ${err}`);
   }
 
   return response.json();
@@ -108,15 +127,10 @@ export async function handler(event) {
 
     const productName = normalizeName(rawProductName);
 
-    if (!orderId) {
-      return { statusCode: 400, body: "Missing order ID" };
-    }
+    if (!orderId) return { statusCode: 400, body: "Missing order ID" };
+    if (!productName) return { statusCode: 400, body: "Missing product name" };
 
-    if (!productName) {
-      return { statusCode: 400, body: "Missing product name" };
-    }
-
-    // Check if this order was already processed
+    // Dedupe by order_id (prevents duplicate emails on webhook retries)
     const { data: existing, error: existingError } = await supabase
       .from("tokens")
       .select("token, tour_folder, product")
@@ -126,12 +140,14 @@ export async function handler(event) {
     if (existingError) throw new Error(existingError.message);
 
     if (existing?.token) {
+      const existingUrl = `https://dulcet-sorbet-41b108.netlify.app/access?token=${existing.token}`;
       return {
         statusCode: 200,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           success: true,
           alreadyProcessed: true,
-          accessUrl: `https://dulcet-sorbet-41b108.netlify.app/access?token=${existing.token}`,
+          accessUrl: existingUrl,
         }),
       };
     }
@@ -144,9 +160,10 @@ export async function handler(event) {
     if (!match) {
       return {
         statusCode: 200,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           success: false,
-          message: "Product not recognized",
+          message: "Product not recognized (no MATCH_RULE matched).",
           productName,
         }),
       };
@@ -154,12 +171,13 @@ export async function handler(event) {
 
     const tourFolder = match.folder;
 
-    // Generate secure token
+    // Generate token
     const token = crypto.randomBytes(16).toString("hex");
 
-    // Expiry set to 2099
+    // Expiry set far future
     const expiresAt = new Date("2099-01-01T00:00:00.000Z");
 
+    // Store token
     const { error: insertError } = await supabase.from("tokens").insert([
       {
         order_id: orderId,
@@ -177,7 +195,7 @@ export async function handler(event) {
 
     const accessUrl = `https://dulcet-sorbet-41b108.netlify.app/access?token=${token}`;
 
-    // Send email
+    // Send access email
     await sendAccessEmail({
       to: customerEmail,
       productName,
@@ -186,12 +204,13 @@ export async function handler(event) {
 
     return {
       statusCode: 200,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         success: true,
         productName,
         tourFolder,
         accessUrl,
-        emailed: true,
+        emailedTo: customerEmail || null,
       }),
     };
   } catch (error) {
