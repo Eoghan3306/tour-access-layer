@@ -16,11 +16,10 @@ function normalizeName(name) {
 }
 
 // Match rules: if product name CONTAINS one of these, route to folder.
-// This avoids fragile symbols like ◷ becoming ?.
 const MATCH_RULES = [
   { contains: "Killarney Town", folder: "Town" },
   { contains: "Discover Killarney National Park", folder: "National" },
-  { contains: "Hag", folder: "Hags" }, // covers Hag’s Glen / Hag's Glen
+  { contains: "Hag", folder: "Hags" },
   { contains: "Muckross Park Revealed", folder: "Muckross" },
   { contains: "Ross Island Uncovered", folder: "Ross" },
 ];
@@ -59,12 +58,11 @@ export async function handler(event) {
 
     const tourFolder = match.folder;
 
-    // Generate token
+    // Generate secure token
     const token = crypto.randomBytes(16).toString("hex");
 
-    // Expiry
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    // Set expiry to January 1, 2099 (effectively unlimited)
+    const expiresAt = new Date("2099-01-01T00:00:00.000Z");
 
     const { error } = await supabase.from("tokens").insert([
       {
@@ -74,7 +72,7 @@ export async function handler(event) {
         created_at: new Date().toISOString(),
         expires_at: expiresAt.toISOString(),
         uses: 0,
-        max_uses: 3,
+        max_uses: 4,
       },
     ]);
 
