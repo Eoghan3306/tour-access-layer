@@ -16,11 +16,8 @@ function normalizeName(name) {
 }
 
 // Remove draft/duplicate suffixes like "(Copy)" from emails/subject.
-// Keeps DB product value cleaner too.
 function cleanProductForEmail(productName) {
-  return normalizeName(productName)
-    .replace(/\s*\(copy\)\s*$/i, "")
-    .trim();
+  return normalizeName(productName).replace(/\s*\(copy\)\s*$/i, "").trim();
 }
 
 const MATCH_RULES = [
@@ -34,14 +31,14 @@ const MATCH_RULES = [
 async function sendAccessEmail({ to, productName, accessUrl }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
-  const replyTo = process.env.SUPPORT_REPLY_TO;
+  // Replies will go here (you said this inbox works today)
+  const replyTo = process.env.SUPPORT_REPLY_TO || "info@killarneyaudiotours.com";
 
   if (!apiKey) throw new Error("Missing RESEND_API_KEY");
   if (!from) throw new Error("Missing RESEND_FROM_EMAIL");
   if (!to) throw new Error("Missing customer email");
 
   const displayName = cleanProductForEmail(productName);
-
   const subject = `Your Tour Access Link – ${displayName}`;
 
   // Plain-text: URL on its own line => most clients auto-link it
@@ -53,9 +50,8 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
     "Your access link:",
     accessUrl,
     "",
-    "If the link isn’t clickable in your email app, copy and paste it into your browser.",
-    "",
-    "This link can be used on up to 4 devices.",
+    "For security reasons, this access link can be opened up to 4 times.",
+    "If you have any trouble accessing your tour, just reply to this email.",
     "",
     "Enjoy your tour!",
     "Killarney Audio Tours",
@@ -80,10 +76,12 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
   </p>
 
   <p style="margin:0 0 12px 0; color:#555;">
-    If the button/link isn’t clickable in your email app, copy and paste the URL into your browser.
+    For security reasons, this access link can be opened up to <strong>4</strong> times.
   </p>
 
-  <p style="margin:0 0 12px 0;">This link can be used on up to 4 devices.</p>
+  <p style="margin:0 0 12px 0; color:#555;">
+    If you have any trouble accessing your tour, simply reply to this email.
+  </p>
 
   <p style="margin:0;">Enjoy your experience,<br/>Killarney Audio Tours</p>
 </div>
@@ -101,7 +99,7 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
       subject,
       text,
       html,
-      ...(replyTo ? { replyTo } : {}), // Resend uses replyTo (camelCase)
+      replyTo, // ✅ replies go to your inbox
     }),
   });
 
