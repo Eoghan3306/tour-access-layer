@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import https from "https";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -15,7 +16,6 @@ function normalizeName(name) {
     .replace(/\s+/g, " ");
 }
 
-// Remove draft/duplicate suffixes like "(Copy)" from emails/subject.
 function cleanProductForEmail(productName) {
   return normalizeName(productName).replace(/\s*\(copy\)\s*$/i, "").trim();
 }
@@ -28,10 +28,56 @@ const MATCH_RULES = [
   { contains: "Ross Island Uncovered", folder: "Ross" },
 ];
 
+function resendRequest(payload, apiKey) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(payload);
+
+    const req = https.request(
+      {
+        hostname: "api.resend.com",
+        path: "/emails",
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(data),
+        },
+      },
+      (res) => {
+        let body = "";
+
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+
+        res.on("end", () => {
+          const status = res.statusCode || 500;
+
+          if (status >= 200 && status < 300) {
+            try {
+              resolve(JSON.parse(body));
+            } catch {
+              resolve(body);
+            }
+          } else {
+            reject(new Error(`Resend error (${status}): ${body}`));
+          }
+        });
+      }
+    );
+
+    req.on("error", (err) => {
+      reject(new Error(`Resend request failed: ${err.message}`));
+    });
+
+    req.write(data);
+    req.end();
+  });
+}
+
 async function sendAccessEmail({ to, productName, accessUrl }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
-  // Replies will go here (you said this inbox works today)
   const replyTo = process.env.SUPPORT_REPLY_TO || "info@killarneyaudiotours.com";
 
   if (!apiKey) throw new Error("Missing RESEND_API_KEY");
@@ -41,7 +87,6 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
   const displayName = cleanProductForEmail(productName);
   const subject = `Your Tour Access Link – ${displayName}`;
 
-  // Plain-text: URL on its own line => most clients auto-link it
   const text = [
     "Thanks for your purchase!",
     "",
@@ -57,7 +102,6 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
     "Killarney Audio Tours",
   ].join("\n");
 
-  // HTML: include BOTH a button and a visible clickable URL
   const html = `
 <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height:1.6; font-size:16px;">
   <h2 style="margin:0 0 12px 0;">Your Tour Access</h2>
@@ -87,28 +131,17 @@ async function sendAccessEmail({ to, productName, accessUrl }) {
 </div>
 `.trim();
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  return resendRequest(
+    {
       from,
       to,
       subject,
       text,
       html,
-      replyTo, // ✅ replies go to your inbox
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Resend error (${response.status}): ${err}`);
-  }
-
-  return response.json();
+      replyTo,
+    },
+    apiKey
+  );
 }
 
 export async function handler(event) {
@@ -125,10 +158,14 @@ export async function handler(event) {
 
     const productName = normalizeName(rawProductName);
 
-    if (!orderId) return { statusCode: 400, body: "Missing order ID" };
-    if (!productName) return { statusCode: 400, body: "Missing product name" };
+    if (!orderId) {
+      return { statusCode: 400, body: "Missing order ID" };
+    }
 
-    // Dedupe by order_id (prevents duplicate emails on webhook retries)
+    if (!productName) {
+      return { statusCode: 400, body: "Missing product name" };
+    }
+
     const { data: existing, error: existingError } = await supabase
       .from("tokens")
       .select("token, tour_folder, product")
@@ -139,6 +176,7 @@ export async function handler(event) {
 
     if (existing?.token) {
       const existingUrl = `https://dulcet-sorbet-41b108.netlify.app/access?token=${existing.token}`;
+
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
@@ -150,7 +188,6 @@ export async function handler(event) {
       };
     }
 
-    // Match folder
     const match = MATCH_RULES.find((rule) =>
       productName.toLowerCase().includes(rule.contains.toLowerCase())
     );
@@ -168,14 +205,9 @@ export async function handler(event) {
     }
 
     const tourFolder = match.folder;
-
-    // Generate token
     const token = crypto.randomBytes(16).toString("hex");
-
-    // Expiry set far future
     const expiresAt = new Date("2099-01-01T00:00:00.000Z");
 
-    // Store token
     const { error: insertError } = await supabase.from("tokens").insert([
       {
         order_id: orderId,
@@ -193,7 +225,6 @@ export async function handler(event) {
 
     const accessUrl = `https://dulcet-sorbet-41b108.netlify.app/access?token=${token}`;
 
-    // Send access email
     await sendAccessEmail({
       to: customerEmail,
       productName,
